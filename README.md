@@ -2,6 +2,8 @@
 
 # ComposeOps
 
+> 此 fork 面向「中文单面板 + 完整备份恢复」二开。已增加**完整备份范围预检**；完整备份与恢复执行尚未实现。范围、基线及验收计划见[二开说明](docs/public/FORK_DEVELOPMENT.md)。
+
 **轻量级 Docker Compose 运维面板，专为个人服务器设计**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

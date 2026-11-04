@@ -75,11 +75,11 @@
         v-for="project in visibleProjects" :key="project.id" :project="project"
         :expanded="expandedIds.has(project.id)" :selected="selectedIds.includes(project.id)" :focused="route.query.focus === project.id || kbFocusId === project.id"
         :busy="busy" :last-results="updateSettings.lastResults" :action-running="project.id === runningAction.id ? runningAction.action : ''"
-        @toggle-expand="toggleExpanded(project.id)" @toggle-select="toggleSelection(project.id)" @refresh="refresh" @activity="activityProject = project" @env="envProject = project" @upgrade="upgradeProject = project" @db-dump="dbDumpProject = project" @action="(action) => run(project, action)"
+        @toggle-expand="toggleExpanded(project.id)" @toggle-select="toggleSelection(project.id)" @refresh="refresh" @activity="activityProject = project" @env="openAccess(project)" @credentials="openAccess(project, 'credentials')" @upgrade="upgradeProject = project" @db-dump="dbDumpProject = project" @action="(action) => run(project, action)"
       />
     </div>
     <OperationOutputDrawer v-if="output.open" :label="actionLabel(output.action)" :name="output.name" :text="output.text" :project-id="output.projectId" :exit-code="output.exitCode" :running="output.running" :batch-tasks="batchTasks" :batch-progress="batchProgress" :completed-count="completedBatchTasks" @close="output.open = false" @diagnose="openDiagnosisForOutput" @inspect="inspectOutputProject" />
-    <ProjectAccessModal v-if="envProject" :project="envProject" @close="closeEnv" @refresh="refresh" @apply="handleEnvApply" />
+    <ProjectAccessModal v-if="envProject" :key="envProject.id" :project="envProject" :initial-tab="accessInitialTab" @close="closeEnv" @refresh="refresh" @apply="handleEnvApply" />
     <AIDiagnosisModal v-if="diagnosis" :open="!!diagnosis" :project-id="diagnosis.projectId" :project-name="diagnosis.projectName" :container-id="diagnosis.containerId" :raw-logs="diagnosis.rawLogs" :env-keys="diagnosis.envKeys" :failed-command="diagnosis.failedCommand" :exit-code="diagnosis.exitCode" :env-editable="diagnosis.envEditable" @close="diagnosis = null" />
     <ProjectActivityDrawer v-if="activityProject" :project="activityProject" @close="activityProject = null" @restored="handleRestored" />
     <ProjectUpgradeModal v-if="upgradeProject" :project="upgradeProject" :open="!!upgradeProject" @close="upgradeProject = null" @upgrade="handleUpgrade" />
@@ -117,6 +117,7 @@ const { openAgent, updateAgentContext } = useAgentConsole();
 const autoRefresh = ref(true); const busy = ref(false); const expandedIds = ref(new Set());
 const searchQuery = ref(''); const filter = ref('managed'); const sort = ref('priority');
 const selectedIds = ref([]); const updateSettings = ref({ lastResults: [] }); const focusedProject = ref('');
+const accessInitialTab = ref('env');
 const inspection = ref(null); const inspectionLoading = ref(false);
 const batchTasks = ref([]); const activityProject = ref(null); const envProject = ref(null); const diagnosis = ref(null); const upgradeProject = ref(null); const dbDumpProject = ref(null); const runningAction = ref({ id: '', action: '' }); const kbFocusId = ref(''); const restartTarget = ref(null);
 const GP = { healthy: 90, attention: 75, degraded: 55, critical: 0 };
@@ -363,6 +364,10 @@ async function focusProject() {
   if (!expandedIds.value.has(projectId)) toggleExpanded(projectId);
   await nextTick(); document.getElementById(`project-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
+function openAccess(project, tab = 'env') {
+  accessInitialTab.value = tab;
+  envProject.value = project;
+}
 function closeEnv() {
   envProject.value = null;
   if (route.query.env) {
@@ -376,7 +381,7 @@ async function openEnvFromQuery() {
   if (!projectId || envProject.value?.id === projectId) return;
   const project = store.projects.find((p) => p.id === projectId);
   if (!project) return;
-  envProject.value = project;
+  openAccess(project);
 }
 watch(() => route.query.env, openEnvFromQuery);
 
@@ -453,7 +458,7 @@ async function handleKbAction(action) {
   if (!project) return;
   if (action === 'expand') { toggleExpanded(project.id); return; }
   if (action === 'l') { router.push({ path: '/logs', query: { projectId: project.id, from: 'services' } }); return; }
-  if (action === 'e') { envProject.value = project; return; }
+  if (action === 'e') { openAccess(project); return; }
   if (action === 'c') { router.push({ path: '/compose', query: { projectId: project.id } }); return; }
   if (action === 'r') {
     restartTarget.value = project;

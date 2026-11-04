@@ -29,7 +29,7 @@
       </button>
       <div class="svc-card__utilities">
         <button v-if="updateInfo?.hasUpdate" class="icon-btn text-amber-400" title="检测到镜像可更新，点击升级" aria-label="升级项目" @click.stop="$emit('upgrade')"><Sparkles class="h-4 w-4" /></button>
-        <button class="icon-btn" title="环境与密钥" aria-label="环境与密钥" @click="$emit('env')"><KeyRound class="h-4 w-4" /></button>
+        <button class="icon-btn" title="账号密码" aria-label="管理账号密码" @click="$emit('credentials')"><KeyRound class="h-4 w-4" /></button>
         <button class="icon-btn" title="编辑备注" aria-label="编辑备注" @click="editNote(project)"><Pencil class="h-4 w-4" /></button>
       </div>
     </header>
@@ -124,7 +124,7 @@ const props = defineProps({
   actionRunning: { type: String, default: '' },
   lastResults: { type: Array, default: () => [] },
 });
-const emit = defineEmits(['toggle-expand', 'toggle-select', 'action', 'activity', 'env', 'db-dump', 'upgrade', 'refresh']);
+const emit = defineEmits(['toggle-expand', 'toggle-select', 'action', 'activity', 'env', 'credentials', 'db-dump', 'upgrade', 'refresh']);
 const stopConfirm = ref(false);
 
 const metrics = ref({});

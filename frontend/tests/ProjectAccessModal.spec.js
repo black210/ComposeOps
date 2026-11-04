@@ -27,6 +27,12 @@ async function start(props = {}) {
 }
 
 describe('环境与密钥统一入口', () => {
+  it('指定账号密码入口时直接显示对应页签，不加载环境变量', async () => {
+    await start({ initialTab: 'credentials' });
+    expect(tab('账号密码').attributes('aria-pressed')).toBe('true');
+    expect(api.getProjectEnv).not.toHaveBeenCalled();
+    expect(api.getProjectCredentials).toHaveBeenCalledWith('combined');
+  });
   it('在同一窗口切换页签，按需读取各自的数据', async () => {
     await start();
     expect(tab('环境变量').attributes('aria-pressed')).toBe('true');

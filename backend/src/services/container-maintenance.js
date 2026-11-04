@@ -20,6 +20,7 @@ import {
 import { collectDockerOutput } from '../lib/docker-streams.js';
 import { catalog, mutateCatalog, recoveryKey, keyPath, seal, unseal } from './maintenance-store.js';
 import { validBackupPath, within, containerIdentity as identity } from './maintenance-worker.js';
+import { imageCheckSettings } from './image-registry.js';
 
 const plans = new Map();
 const active = new Set();
@@ -213,6 +214,7 @@ export async function maintenanceOverview() {
   return {
     hostId: host.id,
     settings: backupSettings(),
+    imageCheck: imageCheckSettings(),
     containers: containers.map((c) => {
       const project = projects.find(
         (p) =>
@@ -382,6 +384,14 @@ export async function prepareMaintenance(input) {
     try {
       const model = await composeModel(p),
         unresolved = await composeModel(p, true);
+      if (input.action === 'update') {
+        const selectedServices = new Set(plan.selected.filter((c) => group(c) === p.projectName + '\0' + p.workingDir)
+          .map((c) => c.Config.Labels['com.docker.compose.service']));
+        for (const [serviceName, config] of Object.entries(model.services || {})) {
+          if (selectedServices.has(serviceName) && (config.pull_policy === 'never' || config.pull_policy === 'build' || (config.build && config.pull_policy !== 'always')))
+            plan.blockers.push(`${p.projectName}/${serviceName} 使用本地构建或禁止拉取策略；需明确构建或拉取方案后更新，仍可完整备份`);
+        }
+      }
       const references = [];
       const addRef = (value) => {
         if (typeof value === 'string')

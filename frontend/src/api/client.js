@@ -116,6 +116,8 @@ export function bumpHostEpoch() {
 
 export const api = {
   getMaintenance: () => request('/maintenance/', { force: true }),
+  saveImageCheckSettings: (payload) => request('/maintenance/image-check/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+  testImageCheckProxy: (payload) => request('/maintenance/image-check/test', { method: 'POST', body: JSON.stringify(payload) }),
   saveMaintenanceSettings: (backupPath) => request('/maintenance/settings', { method: 'PUT', body: JSON.stringify({ backupPath }) }),
   prepareMaintenance: (payload) => request('/maintenance/plans', { method: 'POST', body: JSON.stringify(payload) }),
   executeMaintenance: (payload) => request('/maintenance/execute', { method: 'POST', body: JSON.stringify(payload) }),

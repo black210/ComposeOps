@@ -9,6 +9,13 @@
         <button
           v-if="!plan && tab === 'containers'"
           class="btn-secondary"
+          @click="openProxySettings"
+        >
+          代理设置
+        </button>
+        <button
+          v-if="!plan && tab === 'containers'"
+          class="btn-secondary"
           :disabled="loading"
           @click="checkingUpdates ? stopUpdateChecks() : checkUpdates(true)"
         >
@@ -177,7 +184,8 @@
             </span>
             <span v-else>{{ checkSummary }}</span>
             <span class="text-xs text-muted"
-              >自动读取最近结果，逐项显示；只检查，不拉取或重建容器</span
+              >{{ proxyUrl ? '通过代理检查镜像' : '直连检查镜像，可配置代理' }} ·
+              只检查，不拉取或重建容器</span
             >
           </div>
           <div class="section-panel flex flex-wrap items-center justify-between gap-3">
@@ -492,6 +500,48 @@
       </div>
     </template>
 
+    <BaseModal
+      :show="proxyOpen"
+      title="镜像检查代理"
+      :close-disabled="proxyBusy"
+      @close="proxyOpen = false"
+    >
+      <form class="p-4 space-y-4" @submit.prevent="saveProxy">
+        <label class="block text-sm"
+          >HTTP / HTTPS 代理地址
+          <input
+            v-model="proxyDraft"
+            class="input mt-2 w-full"
+            aria-label="镜像检查代理地址"
+            placeholder="http://host.docker.internal:7890"
+            :disabled="proxyBusy"
+          />
+        </label>
+        <p class="text-xs text-muted">
+          留空表示直连。访问宿主机代理可使用 host.docker.internal；容器中的 127.0.0.1 指向面板自身。
+        </p>
+        <p class="text-xs text-muted">
+          此配置用于镜像查询及仓库授权。实际拉取镜像沿用宿主机 Docker 的网络设置。
+        </p>
+        <p v-if="proxyError" class="alert-error" role="alert">{{ proxyError }}</p>
+        <ul v-if="proxyTest" class="space-y-2 text-sm" role="status">
+          <li
+            v-for="result in proxyTest.results"
+            :key="result.name"
+            :class="result.ok ? 'text-accent' : 'text-amber-400'"
+          >
+            {{ result.name }}：{{ result.ok ? '授权及镜像清单读取成功' : result.message }} ·
+            {{ (result.milliseconds / 1000).toFixed(1) }} 秒
+          </li>
+        </ul>
+        <div class="flex flex-wrap justify-end gap-2">
+          <button type="button" class="btn-secondary" :disabled="proxyBusy" @click="testProxy">
+            {{ proxyBusy ? '处理中…' : '测试连接' }}
+          </button>
+          <button type="submit" class="btn-primary" :disabled="proxyBusy">保存并重新检查</button>
+        </div>
+      </form>
+    </BaseModal>
     <BaseModal :show="!!draft" title="同步目标配置" size-class="sm:max-w-2xl" @close="draft = null">
       <form v-if="draft" class="p-4 space-y-4" @submit.prevent="saveTarget">
         <div class="grid gap-4 sm:grid-cols-2">
@@ -624,6 +674,15 @@ const targets = ref([]),
   query = ref(''),
   backupPath = ref('');
 const updates = ref({});
+const proxyUrl = ref(''),
+  proxyDraft = ref(''),
+  proxyOpen = ref(false),
+  proxyBusy = ref(false),
+  proxyError = ref(''),
+  proxyTest = ref(null);
+watch(proxyDraft, () => {
+  proxyTest.value = null;
+});
 const showHelpers = ref(false),
   checkingUpdates = ref(false),
   updateProgress = ref({ done: 0, total: 0 }),
@@ -695,6 +754,7 @@ async function load(quiet = false) {
     const [overview, result] = await Promise.all([api.getMaintenance(), api.getSyncTargets()]);
     if (current !== epoch || disposed) return;
     data.value = overview;
+    proxyUrl.value = overview.imageCheck?.proxyUrl || '';
     selected.value = selected.value.filter((id) =>
       overview.containers.some((c) => c.id === id && !operationReason(c))
     );
@@ -805,6 +865,46 @@ async function refresh() {
   await load();
   if (!disposed && tab.value === 'containers' && !checkingUpdates.value) void checkUpdates(false);
 }
+function openProxySettings() {
+  proxyDraft.value = proxyUrl.value;
+  proxyError.value = '';
+  proxyTest.value = null;
+  proxyOpen.value = true;
+}
+async function testProxy() {
+  if (proxyBusy.value) return;
+  proxyBusy.value = true;
+  proxyError.value = '';
+  proxyTest.value = null;
+  const current = epoch;
+  try {
+    const result = await api.testImageCheckProxy({ proxyUrl: proxyDraft.value.trim() });
+    if (!disposed && current === epoch) proxyTest.value = result;
+  } catch (e) {
+    if (!disposed && current === epoch) proxyError.value = e.message;
+  } finally {
+    if (current === epoch) proxyBusy.value = false;
+  }
+}
+async function saveProxy() {
+  if (proxyBusy.value) return;
+  proxyBusy.value = true;
+  proxyError.value = '';
+  const current = epoch;
+  try {
+    const settings = await api.saveImageCheckSettings({ proxyUrl: proxyDraft.value.trim() });
+    if (disposed || current !== epoch) return;
+    stopUpdateChecks();
+    updates.value = {};
+    proxyUrl.value = settings.proxyUrl;
+    proxyOpen.value = false;
+    void checkUpdates(true);
+  } catch (e) {
+    if (!disposed && current === epoch) proxyError.value = e.message;
+  } finally {
+    if (current === epoch) proxyBusy.value = false;
+  }
+}
 function stopUpdateChecks() {
   updateGeneration++;
   for (const controller of updateControllers) controller.abort();
@@ -858,7 +958,12 @@ async function checkUpdates(force = false, projectId = null) {
           writeResult(
             c,
             item
-              ? { ...item, checkedAt: result.checkedAt }
+              ? {
+                  ...item,
+                  ...item.containers?.find((member) => member.containerId === c.id),
+                  reason: item.reason,
+                  checkedAt: result.checkedAt,
+                }
               : {
                   status: 'unresolved',
                   reason: result.error || 'Compose 中未找到此容器对应的服务镜像',
@@ -906,6 +1011,7 @@ function updateLabel(container) {
       pinned: '固定镜像',
       local_build: '本地构建',
       local_only: '仅本地镜像',
+      not_deployed: '尚未部署',
       failed: '检查失败',
       unknown: '无法比较',
       unsupported: '需 Compose 定义',
@@ -1055,6 +1161,9 @@ function hostChanged() {
   draft.value = null;
   syncChoice.value = null;
   stopAuth();
+  proxyOpen.value = false;
+  proxyBusy.value = false;
+  proxyUrl.value = '';
   void load().then(() => {
     if (tab.value === 'containers') void checkUpdates(false);
   });

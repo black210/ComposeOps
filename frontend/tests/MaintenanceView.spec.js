@@ -16,6 +16,8 @@ const client = vi.hoisted(() =>
       'pollAuthorize115',
       'recoverMaintenanceTask',
       'getProjectUpdates',
+      'saveImageCheckSettings',
+      'testImageCheckProxy',
     ].map((k) => [k, vi.fn()])
   )
 );
@@ -78,6 +80,42 @@ async function show() {
 }
 const button = (text) => wrapper.findAll('button').find((b) => b.text() === text);
 describe('完整备份界面的真实确认条件', () => {
+  it('代理测试不会保存地址，保存后才强制重新检查', async () => {
+    client.getMaintenance.mockResolvedValue({
+      ...overview(),
+      imageCheck: { proxyUrl: '' },
+      containers: [
+        { ...overview().containers[0], projectId: 'p', service: 'web', updateCheckAvailable: true },
+      ],
+    });
+    client.getProjectUpdates.mockResolvedValue({ images: [{ service: 'web', status: 'current' }] });
+    client.testImageCheckProxy.mockResolvedValue({
+      ok: true,
+      results: [{ name: 'Docker Hub', ok: true, milliseconds: 700 }],
+    });
+    client.saveImageCheckSettings.mockResolvedValue({
+      proxyUrl: 'http://host.docker.internal:7890',
+    });
+    await show();
+    await button('代理设置').trigger('click');
+    await wrapper
+      .get('input[aria-label="镜像检查代理地址"]')
+      .setValue('http://host.docker.internal:7890');
+    await button('测试连接').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('授权及镜像清单读取成功');
+    expect(client.saveImageCheckSettings).not.toHaveBeenCalled();
+    await wrapper
+      .findAll('form')
+      .find((f) => f.text().includes('HTTP / HTTPS 代理地址'))
+      .trigger('submit');
+    await flushPromises();
+    expect(client.saveImageCheckSettings).toHaveBeenCalledWith({
+      proxyUrl: 'http://host.docker.internal:7890',
+    });
+    expect(client.getProjectUpdates).toHaveBeenLastCalledWith('p', true, expect.any(Object));
+    expect(wrapper.text()).toContain('通过代理检查镜像');
+  });
   it('自动逐应用检查，快结果先显示，失败给出原因且不锁定备份操作', async () => {
     const containers = ['a', 'b'].map((key) => ({
       id: key.repeat(64),

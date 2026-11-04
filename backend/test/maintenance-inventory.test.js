@@ -77,8 +77,11 @@ test('新增运维与恢复密钥接口继承全局鉴权', async () => {
       '/api/v1/maintenance/',
       '/api/v1/maintenance/targets',
       '/api/v1/maintenance/recovery-key',
+      '/api/v1/maintenance/image-check/settings',
     ])
       assert.equal((await app.inject(url)).statusCode, 401);
+    for (const [method, url] of [['PUT', '/api/v1/maintenance/image-check/settings'], ['POST', '/api/v1/maintenance/image-check/test']])
+      assert.equal((await app.inject({ method, url, payload: { proxyUrl: '' } })).statusCode, 401);
   } finally {
     await app.close();
   }

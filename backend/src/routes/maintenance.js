@@ -16,6 +16,8 @@ import {
 } from '../services/container-maintenance.js';
 import { request115Authorization, poll115Authorization } from '../services/maintenance-115.js';
 import { recoveryKey } from '../services/maintenance-store.js';
+import { imageCheckSettings, saveImageCheckSettings, testImageCheckProxy } from '../services/image-registry.js';
+import { clearImageUpdateCache } from '../services/image-updater.js';
 
 const ids = {
   type: 'array',
@@ -61,6 +63,16 @@ export default async function maintenanceRoutes(app) {
     },
     wrap((req) => saveBackupSettings(req.body.backupPath)),
   );
+  const proxySchema = {
+    body: { ...object({ proxyUrl: { type: 'string', maxLength: 2048 } }), required: ['proxyUrl'] },
+  };
+  app.get('/image-check/settings', wrap(() => imageCheckSettings()));
+  app.put('/image-check/settings', { schema: proxySchema }, wrap((req) => {
+    const settings = saveImageCheckSettings(req.body);
+    clearImageUpdateCache();
+    return settings;
+  }));
+  app.post('/image-check/test', { schema: proxySchema }, wrap((req) => testImageCheckProxy(req.body)));
   app.post(
     '/plans',
     {

@@ -81,8 +81,9 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 
 WORKDIR /app/backend
 
-# Workspace 依赖已提升到根 node_modules(Node 会沿 /app/backend → /app 向上解析)
+# 保留提升到根目录的依赖及 workspace 内的嵌套依赖。
 COPY --from=backend-build /app/node_modules /app/node_modules
+COPY --from=backend-build /app/backend/node_modules /app/backend/node_modules
 COPY backend/ ./
 
 # Built frontend, placed so index.js staticRoot (backend/src/../../frontend/dist) resolves

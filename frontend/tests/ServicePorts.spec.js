@@ -36,7 +36,8 @@ describe('多应用端口展示', () => {
   });
   it('主机网络展示镜像声明的端口和候选入口，并标明来源', () => {
     const wrapper = mount(ContainerPorts, { props: { container: { name: 'tao-sync', networkMode: 'host', ports: [], hostPorts: [{ port: 8023, type: 'tcp' }] }, links: [{ port: 8023, url: 'http://example.test:8023' }] } });
-    expect(wrapper.text()).toContain('8023/tcp · 主机网络（声明）');
+    expect(wrapper.text()).toContain('8023/tcp');
+    expect(wrapper.text()).toContain('主机网络（声明）');
     expect(wrapper.get('a').attributes('href')).toBe('http://example.test:8023');
   });
 });

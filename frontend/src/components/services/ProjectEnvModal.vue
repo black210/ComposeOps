@@ -1,9 +1,10 @@
 <template>
   <BaseModal
     :show="true"
-    :title="project.projectName"
-    size-class="flex max-h-[86vh] max-w-[calc(100vw-1.5rem)] flex-col sm:max-w-4xl"
+    :title="title || project.projectName"
+    :size-class="sizeClass"
     body-class="flex min-h-0 flex-1 flex-col p-0"
+    :close-disabled="saving"
     @close="close"
   >
     <template #header-actions>
@@ -13,6 +14,7 @@
       <button class="icon-btn" title="重置为磁盘当前内容" aria-label="重置" @click="reload"><RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" /></button>
     </template>
 
+    <slot name="navigation" />
     <!-- 模式切换 Tab -->
     <div class="tabs shrink-0 px-4 pt-2">
         <button :class="{ active: mode === 'table' }" @click="mode = 'table'"><ListOrdered class="h-4 w-4" />键值表格</button>
@@ -111,12 +113,12 @@
     </BaseModal>
     <ChangePreviewModal :show="showPreview" :preview="changePreview" title="应用环境变量 · 变更预览" confirm-text="保存并重建" fallback-message="无法获取变更预览,继续将保存文件并平滑重建容器。" @confirm="doSave(true)" @cancel="showPreview = false" />
     <ConfirmDialog :show="!!restorePending" title="恢复历史环境变量" :message="restorePending ? '确定将 ' + activeFile + ' 恢复为 ' + restorePending.name + '？当前文件会先自动备份，选中的历史备份不会被删除。' : ''" tone="warning" confirm-text="确认恢复" @confirm="confirmRestore" @cancel="restorePending = null" />
-    <ConfirmDialog :show="!!pendingConfirm" title="未保存的修改" :message="pendingConfirm?.message || ''" tone="warning" confirm-text="继续" @confirm="confirmPending" @cancel="pendingConfirm = null" />
+    <ConfirmDialog :show="!!pendingConfirm" title="未保存的修改" :message="pendingConfirm?.message || ''" tone="warning" confirm-text="继续" @confirm="confirmPending" @cancel="cancelPending" />
   </BaseModal>
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { ChevronDown, ChevronUp, Copy, Eye, EyeOff, FileCode2, History, KeyRound, ListOrdered, Play, Plus, RefreshCw, Save, Search, Trash2 } from 'lucide-vue-next';
 import { api } from '../../api/client.js';
 import { parseDotenv, serializeDotenv, isSecretKey } from '../../lib/dotenv.js';
@@ -127,6 +129,8 @@ import ConfirmDialog from '../common/ConfirmDialog.vue';
 
 const props = defineProps({
   project: { type: Object, required: true },
+  title: { type: String, default: '' },
+  sizeClass: { type: String, default: 'flex max-h-[86vh] max-w-[calc(100vw-1.5rem)] flex-col sm:max-w-4xl' },
 });
 const emit = defineEmits(['close', 'refresh', 'apply']);
 
@@ -267,6 +271,7 @@ function buildRaw() {
 }
 
 function close() {
+  if (saving.value) return;
   if (dirty.value) { pendingConfirm.value = { type: 'close', message: '有未保存的修改,关闭会丢失这些内容。继续?' }; return; }
   emit('close');
 }
@@ -277,7 +282,16 @@ function confirmPending() {
   if (action.type === 'switch') { activeFile.value = action.name; load(); }
   else if (action.type === 'reload') load();
   else if (action.type === 'close') emit('close');
+  else if (action.type === 'leave') action.resolve(true);
 }
+function cancelPending() { pendingConfirm.value?.resolve?.(false); pendingConfirm.value = null; }
+function requestLeave() {
+  if (loading.value || saving.value || pendingConfirm.value || confirm.value || restorePending.value || previewLoading.value || showPreview.value) return Promise.resolve(false);
+  if (!dirty.value) return Promise.resolve(true);
+  return new Promise(resolve => { pendingConfirm.value = { type: 'leave', message: '有未保存的环境变量修改，切换页签会丢失这些内容。继续？', resolve }; });
+}
+defineExpose({ requestLeave });
+onBeforeUnmount(cancelPending);
 async function saveOnly() { await doSave(false); }
 async function saveAndApply() { pendingApply.value = true; confirm.value = true; }
 const showPreview = ref(false);

@@ -79,7 +79,7 @@
       />
     </div>
     <OperationOutputDrawer v-if="output.open" :label="actionLabel(output.action)" :name="output.name" :text="output.text" :project-id="output.projectId" :exit-code="output.exitCode" :running="output.running" :batch-tasks="batchTasks" :batch-progress="batchProgress" :completed-count="completedBatchTasks" @close="output.open = false" @diagnose="openDiagnosisForOutput" @inspect="inspectOutputProject" />
-    <ProjectEnvModal v-if="envProject" :project="envProject" @close="closeEnv" @refresh="refresh" @apply="handleEnvApply" />
+    <ProjectAccessModal v-if="envProject" :project="envProject" @close="closeEnv" @refresh="refresh" @apply="handleEnvApply" />
     <AIDiagnosisModal v-if="diagnosis" :open="!!diagnosis" :project-id="diagnosis.projectId" :project-name="diagnosis.projectName" :container-id="diagnosis.containerId" :raw-logs="diagnosis.rawLogs" :env-keys="diagnosis.envKeys" :failed-command="diagnosis.failedCommand" :exit-code="diagnosis.exitCode" :env-editable="diagnosis.envEditable" @close="diagnosis = null" />
     <ProjectActivityDrawer v-if="activityProject" :project="activityProject" @close="activityProject = null" @restored="handleRestored" />
     <ProjectUpgradeModal v-if="upgradeProject" :project="upgradeProject" :open="!!upgradeProject" @close="upgradeProject = null" @upgrade="handleUpgrade" />
@@ -99,7 +99,7 @@ import { useAgentConsole } from '../composables/useAgentConsole.js';
 import { usePullRefresh } from '../composables/usePullRefresh.js';
 import { api, streamComposeControl, wsUrl } from '../api/client.js';
 import ProjectActivityDrawer from '../components/ProjectActivityDrawer.vue';
-import ProjectEnvModal from '../components/services/ProjectEnvModal.vue';
+import ProjectAccessModal from '../components/services/ProjectAccessModal.vue';
 import ServiceProjectCard from '../components/services/ServiceProjectCard.vue';
 import AIDiagnosisModal from '../components/services/AIDiagnosisModal.vue';
 import ProjectUpgradeModal from '../components/services/ProjectUpgradeModal.vue';
@@ -115,7 +115,7 @@ const route = useRoute();
 const router = useRouter();
 const { openAgent, updateAgentContext } = useAgentConsole();
 const autoRefresh = ref(true); const busy = ref(false); const expandedIds = ref(new Set());
-const searchQuery = ref(''); const filter = ref('all'); const sort = ref('priority');
+const searchQuery = ref(''); const filter = ref('managed'); const sort = ref('priority');
 const selectedIds = ref([]); const updateSettings = ref({ lastResults: [] }); const focusedProject = ref('');
 const inspection = ref(null); const inspectionLoading = ref(false);
 const batchTasks = ref([]); const activityProject = ref(null); const envProject = ref(null); const diagnosis = ref(null); const upgradeProject = ref(null); const dbDumpProject = ref(null); const runningAction = ref({ id: '', action: '' }); const kbFocusId = ref(''); const restartTarget = ref(null);
@@ -226,7 +226,7 @@ function hasAttention(project) { return project.status !== 'running' || project.
 function searchIndex(project) { return [project.projectName, project.owner, project.workingDir, project.note, ...project.containers.flatMap((container) => [container.name, container.image])].join(' ').toLowerCase(); }
 const statusMatchers = { attention: (p) => hasAttention(p), running: (p) => !hasAttention(p), managed: (p) => p.managed, unmanaged: (p) => !p.managed, favorites: (p) => p.favorite, stopped: (p) => p.containers.some((c) => c.state !== 'running') };
 const sortComparators = { name: (a, b) => a.projectName.localeCompare(b.projectName), owner: (a, b) => a.owner.localeCompare(b.owner) || a.projectName.localeCompare(b.projectName), priority: (a, b) => Number(hasAttention(b)) - Number(hasAttention(a)) || Number(b.favorite) - Number(a.favorite) || Number(b.managed) - Number(a.managed) || a.projectName.localeCompare(b.projectName) };
-function resetFilters() { searchQuery.value = ''; filter.value = 'all'; sort.value = 'priority'; }
+function resetFilters() { searchQuery.value = ''; filter.value = 'managed'; sort.value = 'priority'; }
 function toggleSelection(projectId) { selectedIds.value = selectedIds.value.includes(projectId) ? selectedIds.value.filter((id) => id !== projectId) : [...selectedIds.value, projectId]; }
 function toggleAllVisible() { const visibleIds = visibleManagedProjects.value.map((project) => project.id); selectedIds.value = allVisibleSelected.value ? selectedIds.value.filter((id) => !visibleIds.includes(id)) : [...new Set([...selectedIds.value, ...visibleIds])]; }
 function toggleExpanded(projectId) { const next = new Set(expandedIds.value); if (next.has(projectId)) next.delete(projectId); else next.add(projectId); expandedIds.value = next; }
@@ -359,7 +359,7 @@ async function pollJob(jobId) {
 async function focusProject() {
   const projectId = String(route.query.focus || '');
   if (!projectId || focusedProject.value === projectId || !store.projects.some((project) => project.id === projectId)) return;
-  focusedProject.value = projectId; searchQuery.value = ''; filter.value = 'all';
+  focusedProject.value = projectId; searchQuery.value = ''; filter.value = store.projects.find((project) => project.id === projectId)?.managed ? 'managed' : 'all';
   if (!expandedIds.value.has(projectId)) toggleExpanded(projectId);
   await nextTick(); document.getElementById(`project-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }

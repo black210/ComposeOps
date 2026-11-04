@@ -27,13 +27,13 @@ async function start(component = ProjectCredentialsModal) {
 }
 
 describe('账号密码维护', () => {
-  it('密钥按钮点击后才读取凭据', async () => {
+  it('统一入口发出编辑事件，卡片本身不读取凭据', async () => {
     await start(ServiceProjectCard);
     expect(api.getProjectCredentials).not.toHaveBeenCalled();
-    await wrapper.get('[aria-label="管理账号密码"]').trigger('click');
+    await wrapper.get('[aria-label="环境与密钥"]').trigger('click');
     await flushPromises();
-    expect(api.getProjectCredentials).toHaveBeenCalledWith('project-a');
-    expect(wrapper.findComponent(ProjectCredentialsModal).exists()).toBe(true);
+    expect(wrapper.emitted('env')).toHaveLength(1);
+    expect(api.getProjectCredentials).not.toHaveBeenCalled();
   });
 
   it('默认隐藏密码，保存携带节点及版本，且支持多组账号', async () => {

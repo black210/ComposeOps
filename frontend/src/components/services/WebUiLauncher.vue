@@ -3,7 +3,7 @@
     <div v-for="group in groups" :key="group.id" class="flex min-w-0 flex-wrap items-center gap-1.5">
       <span class="max-w-48 truncate font-mono text-xs text-surface-400" :title="group.name">{{ group.name }}</span>
       <a v-for="link in group.links" :key="link.port" :href="link.url" target="_blank" rel="noopener noreferrer"
-         class="webui-badge" :title="`打开 ${group.name} (${link.url})`">
+         class="webui-badge" :title="`打开 ${group.name} (${link.url})${link.source === 'host-exposed' ? ' · 主机网络，端口来自镜像声明' : ''}`">
         <Globe class="h-3.5 w-3.5" />{{ link.port }}
       </a>
     </div>

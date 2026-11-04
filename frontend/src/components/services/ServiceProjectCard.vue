@@ -223,12 +223,12 @@ async function loadWebUi() {
   try {
     const data = await api.getProjectWebUi(props.project.id);
     if (requestId !== webuiRequest) return;
-    webuiLinks.value = (data?.links || []).flatMap((entry) => entry.ports.map((port) => ({ port: port.port, url: port.url, containerId: entry.containerId, containerName: entry.containerName, serviceName: entry.serviceName })));
+    webuiLinks.value = (data?.links || []).flatMap((entry) => entry.ports.map((port) => ({ port: port.port, url: port.url, containerId: entry.containerId, containerName: entry.containerName, serviceName: entry.serviceName, source: entry.source })));
   } catch {
     if (requestId === webuiRequest) webuiLinks.value = []; // 检测失败静默
   }
 }
-watch(() => JSON.stringify([props.project.id, props.project.managed, props.project.containers.map(({ id, state, ports }) => ({ id, state, ports }))]), loadWebUi, { immediate: true });
+watch(() => JSON.stringify([props.project.id, props.project.managed, props.project.containers.map(({ id, state, ports, hostPorts }) => ({ id, state, ports, hostPorts }))]), loadWebUi, { immediate: true });
 
 async function loadEnvPreview() {
   envPreview.value = [];

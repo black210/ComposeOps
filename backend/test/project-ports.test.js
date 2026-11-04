@@ -27,3 +27,11 @@ test('stopped and unmapped services never get invented links', () => {
     { id: 'host', state: 'running', networkMode: 'host', ports: [] },
   ] }), []);
 });
+
+test('host network uses declared TCP ports without pretending they are published mappings', () => {
+  const entries = scanProjectWebPorts({ containers: [{ id: 'sync', name: 'tao-sync', state: 'running', networkMode: 'host', ports: [],
+    hostPorts: [{ port: 8023, type: 'tcp' }, { port: 8023, type: 'udp' }] }] });
+  const links = buildWebUiLinks('nas.example:28765', entries);
+  assert.equal(links[0].source, 'host-exposed');
+  assert.deepEqual(links[0].ports, [{ port: 8023, url: 'http://nas.example:8023' }]);
+});

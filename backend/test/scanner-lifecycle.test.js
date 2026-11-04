@@ -22,6 +22,17 @@ test.beforeEach(() => { setActiveHost('local'); invalidateScanCache(); });
 test.afterEach(() => { setActiveHost('local'); invalidateScanCache(); });
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
+test('主机网络仅提取 EXPOSE 端口，不向项目列表透出 inspect 环境变量', async t => {
+  const host = row('host-app');
+  host.HostConfig = { NetworkMode: 'host' };
+  t.mock.method(local, 'listContainers', async () => [host]);
+  t.mock.method(local, 'getContainer', () => ({ inspect: async () => ({ Config: { ExposedPorts: { '8023/tcp': {}, '123/udp': {}, 'invalid': {} }, Env: ['PASSWORD=do-not-return'] } }) }));
+  const [project] = await scanProjects();
+  assert.deepEqual(project.containers[0].hostPorts, [{ port: 8023, type: 'tcp' }, { port: 123, type: 'udp' }]);
+  assert.equal(JSON.stringify(project).includes('do-not-return'), false);
+  assert.deepEqual(project.containers[0].ports, []);
+});
+
 test('切换节点不复用旧扫描,旧请求保留原节点访问类型且不覆盖当前缓存', async t => {
   let finishLocal;
   t.mock.method(local, 'listContainers', () => new Promise(resolve => { finishLocal = resolve; }));

@@ -13,7 +13,10 @@ const MAX_PORT = 65535;
 
 /** 过滤出 Web 候选端口,并整体判定容器是否像数据库。 */
 export function classifyPorts(container = {}) {
-  const ports = (container.ports || []).filter((port) => Number(port.public) > 0 && (!port.type || port.type === 'tcp'));
+  const published = container.networkMode === 'host'
+    ? (container.hostPorts || []).map(({ port, type }) => ({ private: port, public: port, type }))
+    : (container.ports || []);
+  const ports = published.filter((port) => Number(port.public) > 0 && (!port.type || port.type === 'tcp'));
   const candidates = ports
     .filter((port) => !DATA_PORTS.has(Number(port.private || port.public)))
     .map((port) => Number(port.public));
@@ -46,7 +49,8 @@ export function scanProjectWebPorts(project = {}) {
     const ports = pickWebPorts(candidates);
     if (!ports.length) continue;
     results.push({ containerId: container.id, containerName: container.name, serviceName: container.service || container.name, ports,
-      httpsPorts: (container.ports || []).filter((port) => Number(port.private) === 443 && (!port.type || port.type === 'tcp')).map((port) => Number(port.public)) });
+      source: container.networkMode === 'host' ? 'host-exposed' : 'published',
+      httpsPorts: container.networkMode === 'host' ? [443] : (container.ports || []).filter((port) => Number(port.private) === 443 && (!port.type || port.type === 'tcp')).map((port) => Number(port.public)) });
   }
   return results;
 }
@@ -66,6 +70,7 @@ export function buildWebUiLinks(hostHeader = '', entries = []) {
     containerId: entry.containerId,
     containerName: entry.containerName,
     serviceName: entry.serviceName || entry.containerName,
+    source: entry.source || 'published',
     ports: entry.ports.map((port) => ({ port, url: `${entry.httpsPorts?.includes(port) ? 'https' : 'http'}://${safeHost}:${port}` })),
   }));
 }

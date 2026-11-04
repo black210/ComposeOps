@@ -170,6 +170,20 @@ async function scanProjectsUncached(activeDocker, nodeType) {
     });
   }
 
+  // host 网络没有 PublicPort，但镜像可声明 EXPOSE。只提取端口元数据，不传出 inspect 中的环境/凭据。
+  const hostContainers = [...projects.values()].flatMap(project => project.containers).filter(container => container.networkMode === 'host');
+  const hostPortResults = await Promise.all(hostContainers.map(async container => {
+    try {
+      const details = await activeDocker.getContainer(container.id).inspect();
+      return Object.keys(details.Config?.ExposedPorts || {}).flatMap(key => {
+        const match = /^(\d+)\/(tcp|udp)$/.exec(key);
+        const port = Number(match?.[1]);
+        return match && port > 0 && port <= 65535 ? [{ port, type: match[2] }] : [];
+      });
+    } catch { return []; /* 无法读取声明时，明确显示没有可用端口信息。 */ }
+  }));
+  hostContainers.forEach((container, index) => { container.hostPorts = hostPortResults[index]; });
+
   // 计算每个 project 的状态：running | stopped | partial + 可达性检查
   for (const project of projects.values()) {
     const runningCount = project.containers.filter(c => c.state === 'running').length;

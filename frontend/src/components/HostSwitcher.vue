@@ -5,15 +5,16 @@
       <span v-else class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
       <span class="max-w-10 truncate sm:hidden">{{ active?.type === 'local' ? '本机' : (active?.name || '节点') }}</span>
       <span class="hidden lg:inline max-w-24 truncate">{{ active?.name || 'Local' }}</span>
-      <ChevronDown class="w-3 h-3 text-surface-500" />
+      <ChevronDown class="dropdown-chevron" />
     </button>
-    <div v-if="open" class="fixed inset-0 z-50" @click="open = false"></div>
-    <section v-if="open" id="docker-host-switcher-panel" class="host-dropdown z-50" role="group" aria-labelledby="docker-host-switcher-title">
+    <Teleport to="body">
+    <div v-if="open" class="header-popover-backdrop" aria-hidden="true" @click="open = false"></div>
+    <section v-if="open" id="docker-host-switcher-panel" class="header-popover" :style="popoverStyle" role="group" aria-labelledby="docker-host-switcher-title">
       <header class="flex items-center justify-between border-b border-surface-800 px-3 py-2">
         <span id="docker-host-switcher-title" class="text-xs font-medium text-surface-300">Docker 节点</span>
         <button class="icon-btn" title="刷新节点状态" aria-label="刷新节点状态" :disabled="store.loading" @click="reload"><RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': store.loading }" /></button>
       </header>
-      <div class="max-h-72 overflow-y-auto p-1.5">
+      <div class="min-h-0 max-h-72 overflow-y-auto p-1.5">
         <button v-for="host in store.hosts" :key="host.id" class="host-item" :class="{ active: host.id === store.activeHostId }" :aria-current="host.id === store.activeHostId ? 'true' : undefined" @click="select(host)">
           <span class="w-2 h-2 rounded-full shrink-0" :class="host.status === 'online' ? 'bg-emerald-400' : host.status === 'offline' ? 'bg-rose-400' : 'bg-surface-500'"></span>
           <span class="min-w-0 flex-1 text-left">
@@ -28,12 +29,14 @@
         </button>
       </div>
     </section>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import { useEscapeKey } from '../composables/useEscapeKey.js';
+import { useAnchoredPopover } from '../composables/useAnchoredPopover.js';
 import { useRouter } from 'vue-router';
 import { useHostsStore } from '../stores/hosts.js';
 import { useToastStore } from '../stores/toast.js';
@@ -45,6 +48,7 @@ const router = useRouter();
 const goManage = () => { open.value = false; router.push('/settings?tab=hosts'); };
 const open = ref(false);
 const triggerRef = ref(null);
+const popoverStyle = useAnchoredPopover(open, triggerRef);
 let previousTriggerFocus = null;
 watch(open, (isOpen) => {
   if (isOpen) {

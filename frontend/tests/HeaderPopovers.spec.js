@@ -55,6 +55,7 @@ beforeEach(() => {
 afterEach(() => {
   wrapper?.unmount();
   wrapper = null;
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.innerHTML = '';
   localStorage.clear();
@@ -74,6 +75,42 @@ async function start(component, stubs = {}) {
 }
 
 describe('顶部下拉控件的可访问性与焦点恢复', () => {
+  it('项目弹层挂到 body，按触发器定位并在外部点击后恢复焦点', async () => {
+    await start(AppHeader);
+    const trigger = document.querySelector('button[aria-label="快速切换项目"]');
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ right: 600, bottom: 52 });
+    trigger.click();
+    await flushPromises();
+    const panel = document.querySelector('#project-switcher-panel');
+    expect(panel.parentElement).toBe(document.body);
+    expect(panel.style.left).toBe('312px');
+    expect(panel.style.top).toBe('60px');
+    expect(document.querySelector('header.app-header .command-backdrop')).toBeNull();
+    document.querySelector('.header-popover-backdrop').click();
+    await flushPromises();
+    expect(document.querySelector('#project-switcher-panel')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('节点弹层在窄屏内保持边距，窗口变化时重新定位', async () => {
+    vi.stubGlobal('innerWidth', 320);
+    await start(HostSwitcher);
+    const trigger = document.querySelector('button[aria-label="切换 Docker 节点"]');
+    const rect = vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ right: 310, bottom: 50 });
+    trigger.click();
+    await flushPromises();
+    const panel = document.querySelector('#docker-host-switcher-panel');
+    expect(panel.parentElement).toBe(document.body);
+    expect(panel.style.left).toBe('20px');
+    expect(panel.style.width).toBe('288px');
+    vi.stubGlobal('innerWidth', 280);
+    rect.mockReturnValue({ right: 270, bottom: 50 });
+    window.dispatchEvent(new Event('resize'));
+    await flushPromises();
+    expect(panel.style.left).toBe('12px');
+    expect(panel.style.width).toBe('256px');
+    rect.mockRestore();
+  });
   it('Docker 节点切换器公开展开状态和命名组，并在 Escape 后恢复焦点', async () => {
     await start(HostSwitcher);
     const trigger = document.querySelector('button[aria-label="切换 Docker 节点"]');

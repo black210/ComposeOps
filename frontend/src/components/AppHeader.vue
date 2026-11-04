@@ -24,16 +24,17 @@
       <div class="relative">
         <button ref="projectSwitcherTriggerRef" class="btn-secondary min-h-8! px-2.5! py-1! text-xs" title="快速切换项目" aria-label="快速切换项目" :aria-expanded="projectSwitcherOpen" :aria-controls="projectSwitcherOpen ? 'project-switcher-panel' : undefined" @click="toggleProjectSwitcher">
           <Layers class="w-3.5 h-3.5" /><span class="hidden min-[380px]:inline">项目</span>
-          <ChevronDown class="w-3 h-3" />
+          <ChevronDown class="dropdown-chevron" />
         </button>
-        <div v-if="projectSwitcherOpen" class="command-backdrop" @click.self="projectSwitcherOpen = false"></div>
-        <div v-if="projectSwitcherOpen" id="project-switcher-panel" ref="projectSwitcherPanelRef" class="absolute right-0 top-full mt-2 w-64 overflow-hidden rounded-xl border border-surface-800 bg-surface-950 shadow-2xl z-60" role="dialog" aria-modal="true" aria-labelledby="project-switcher-title" tabindex="-1" @keydown="trapProjectSwitcherTab">
+        <Teleport to="body">
+        <div v-if="projectSwitcherOpen" class="header-popover-backdrop" aria-hidden="true" @click.self="projectSwitcherOpen = false"></div>
+        <div v-if="projectSwitcherOpen" id="project-switcher-panel" ref="projectSwitcherPanelRef" class="header-popover" :style="projectSwitcherStyle" role="dialog" aria-modal="true" aria-labelledby="project-switcher-title" tabindex="-1" @keydown="trapProjectSwitcherTab">
           <div id="project-switcher-title" class="border-b border-surface-800 px-3 py-2 text-xs font-semibold text-surface-300">快速切换项目</div>
           <label class="search-field mx-2 my-2 flex-none">
             <Search class="h-3.5 w-3.5 shrink-0" />
             <input ref="projectSwitcherSearchRef" v-model="projectQuery" type="search" aria-label="搜索项目" placeholder="搜索项目、归属或路径" />
           </label>
-          <div class="max-h-80 overflow-y-auto p-1.5">
+          <div class="min-h-0 max-h-80 overflow-y-auto p-1.5">
             <button v-for="p in quickProjects" :key="p.id" class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-surface-800/60" @click="goProject(p)">
               <span class="status-dot shrink-0" :class="projectStatusDotClass(p.status)"></span>
               <span class="min-w-0 flex-1">
@@ -45,6 +46,7 @@
             <p v-if="!quickProjects.length" class="px-2 py-4 text-center text-xs text-surface-600">{{ projectQuery ? '没有匹配的项目' : '暂无项目' }}</p>
           </div>
         </div>
+        </Teleport>
       </div>
       <HostSwitcher />
       <EventCenter />
@@ -83,6 +85,7 @@ import { api, bumpHostEpoch } from '../api/client.js';
 import { useHostsStore } from '../stores/hosts.js';
 import { useToastStore } from '../stores/toast.js';
 import { useEscapeKey } from '../composables/useEscapeKey.js';
+import { useAnchoredPopover } from '../composables/useAnchoredPopover.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -96,6 +99,7 @@ const projectQuery = ref('');
 const projectSwitcherTriggerRef = ref(null);
 const projectSwitcherSearchRef = ref(null);
 const projectSwitcherPanelRef = ref(null);
+const projectSwitcherStyle = useAnchoredPopover(projectSwitcherOpen, projectSwitcherTriggerRef);
 let previousProjectSwitcherFocus = null;
 watch(projectSwitcherOpen, async (isOpen) => {
   if (isOpen) {

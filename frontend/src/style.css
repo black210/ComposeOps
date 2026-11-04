@@ -252,7 +252,7 @@
     appearance: none;
     -webkit-appearance: none;
     width: 38px;
-    height: 23px;
+    height: 22px;
     flex: 0 0 auto;
     border-radius: 999px;
     background: var(--toggle-off);
@@ -265,21 +265,23 @@
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 19px;
-    height: 19px;
+    width: auto;
+    height: calc(100% - 4px);
+    aspect-ratio: 1;
     border-radius: 999px;
-    background: var(--text-bright) ;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-    transition: transform 0.38s var(--ease-spring), width 0.18s ease;
+    background: #fff; /* Thumb stays white in both themes. */
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+    transition: left 160ms ease, transform 160ms ease;
   }
   & input:checked {
     background: var(--toggle-on);
   }
   & input:checked::after {
-    transform: translateX(15px);
+    left: calc(100% - 2px);
+    transform: translateX(-100%);
   }
   & input:active::after {
-    width: 21px;
+    filter: brightness(0.96);
   }
 }
 
@@ -288,7 +290,7 @@
     appearance: none;
     -webkit-appearance: none;
     width: 38px;
-    height: 23px;
+    height: 22px;
     flex: 0 0 auto;
     border-radius: 999px;
     background: var(--toggle-off);
@@ -301,21 +303,23 @@
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 19px;
-    height: 19px;
+    width: auto;
+    height: calc(100% - 4px);
+    aspect-ratio: 1;
     border-radius: 999px;
-    background: var(--text-bright) ;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-    transition: transform 0.38s var(--ease-spring), width 0.18s ease;
+    background: #fff; /* Thumb stays white in both themes. */
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+    transition: left 160ms ease, transform 160ms ease;
   }
   & input:checked {
     background: var(--toggle-on);
   }
   & input:checked::after {
-    transform: translateX(15px);
+    left: calc(100% - 2px);
+    transform: translateX(-100%);
   }
   & input:active::after {
-    width: 21px;
+    filter: brightness(0.96);
   }
 }
 

@@ -232,5 +232,5 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.form-grid-label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #71717a; }
+.form-grid-label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-faint); }
 </style>

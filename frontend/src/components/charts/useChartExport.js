@@ -60,7 +60,18 @@ export function useChartExport() {
     const svgElement = canvasWrapper.value?.querySelector('svg');
     if (!svgElement) return;
 
-    const svgData = new XMLSerializer().serializeToString(svgElement);
+    // 导出的独立 SVG 不会继承页面样式，先冻结主题色、网格线与文字样式。
+    const clone = svgElement.cloneNode(true);
+    const originals = [svgElement, ...svgElement.querySelectorAll('*')];
+    const copies = [clone, ...clone.querySelectorAll('*')];
+    originals.forEach((element, index) => {
+      const style = getComputedStyle(element);
+      for (const property of ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'stop-color', 'stop-opacity', 'opacity', 'font-family', 'font-size', 'font-weight']) {
+        copies[index].style.setProperty(property, style.getPropertyValue(property));
+      }
+    });
+    const background = getComputedStyle(document.documentElement).getPropertyValue('--panel-deep').trim() || '#ffffff';
+    const svgData = new XMLSerializer().serializeToString(clone);
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const img = new Image();
@@ -69,7 +80,7 @@ export function useChartExport() {
     canvas.height = height * 2;
 
     img.onload = () => {
-      ctx.fillStyle = '#0F131C';
+      ctx.fillStyle = background;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
@@ -84,10 +95,12 @@ export function useChartExport() {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
       });
+      URL.revokeObjectURL(svgUrl);
     };
 
     const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
     const svgUrl = URL.createObjectURL(svgBlob);
+    img.onerror = () => URL.revokeObjectURL(svgUrl);
     img.src = svgUrl;
   }
 

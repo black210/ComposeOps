@@ -79,7 +79,7 @@ onBeforeUnmount(() => {
   align-items: center;
   margin-bottom: 1rem;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid #27272a;
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .chart-controls {
@@ -90,22 +90,22 @@ onBeforeUnmount(() => {
 .chart-type-btn {
   padding: 0.5rem;
   border-radius: 0.375rem;
-  background: #18181b;
-  border: 1px solid #27272a;
-  color: #a1a1aa;
+  background: var(--canvas-mid-2);
+  border: 1px solid var(--line-strong);
+  color: var(--text-soft);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .chart-type-btn:hover {
-  background: #27272a;
-  color: #e4e4e7;
+  background: var(--line-strong);
+  color: var(--text-strong);
 }
 
 .chart-type-btn.active {
-  background: #38BDF8;
-  border-color: #38BDF8;
-  color: #fff;
+  background: var(--cyan-strong);
+  border-color: var(--cyan-strong);
+  color: var(--on-accent);
 }
 
 .chart-stats {
@@ -115,15 +115,15 @@ onBeforeUnmount(() => {
 }
 
 .stat-item {
-  color: #a1a1aa;
+  color: var(--text-soft);
 }
 
 .stat-item strong {
-  color: #e4e4e7;
+  color: var(--text-strong);
 }
 
 .stat-item.current strong {
-  color: #38BDF8;
+  color: var(--cyan-strong);
 }
 
 .export-dropdown {
@@ -141,8 +141,8 @@ onBeforeUnmount(() => {
   top: calc(100% + 0.5rem);
   left: 0;
   min-width: 10rem;
-  background: #18181b;
-  border: 1px solid #27272a;
+  background: var(--canvas-mid-2);
+  border: 1px solid var(--line-strong);
   border-radius: 0.375rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   z-index: 20;
@@ -157,7 +157,7 @@ onBeforeUnmount(() => {
   padding: 0.75rem 1rem;
   background: transparent;
   border: none;
-  color: #e4e4e7;
+  color: var(--text-strong);
   font-size: 0.875rem;
   text-align: left;
   cursor: pointer;
@@ -165,7 +165,7 @@ onBeforeUnmount(() => {
 }
 
 .export-menu-item:hover {
-  background: #27272a;
+  background: var(--line-strong);
 }
 
 .export-icon {

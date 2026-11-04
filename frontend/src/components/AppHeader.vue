@@ -48,6 +48,7 @@
       </div>
       <HostSwitcher />
       <EventCenter />
+      <ThemeSelect compact />
       <button class="icon-btn" title="打开页面 Agent" aria-label="打开页面 Agent" @click="emitAgentOpen"><Bot class="w-4 h-4 text-accent" /></button>
       <button class="icon-btn hidden sm:inline-flex header-density" :title="density === 'compact' ? '切换为舒适视图' : '切换为紧凑视图'" aria-label="紧凑布局" :aria-pressed="density === 'compact'" @click="toggleDensity"><Rows3 class="w-4 h-4" /></button>
       <span class="hidden lg:inline text-muted">{{ currentTime }}</span>
@@ -77,6 +78,7 @@ import EventCenter from './EventCenter.vue';
 import HostSwitcher from './HostSwitcher.vue';
 import CommandPalette from './common/CommandPalette.vue';
 import ConfirmDialog from './common/ConfirmDialog.vue';
+import ThemeSelect from './common/ThemeSelect.vue';
 import { api, bumpHostEpoch } from '../api/client.js';
 import { useHostsStore } from '../stores/hosts.js';
 import { useToastStore } from '../stores/toast.js';

@@ -681,7 +681,7 @@ onActivated(() => { if (!activatedOnce) { activatedOnce = true; return; } void P
    scoped 内只保留市场页布局与局部语义类的微调。 */
 .marketplace-view {
   /* 部署按钮的强调色:沿用全站 emerald 状态色 */
-  --market-accent-2: #34d399; /* = emerald-400 */
+  --market-accent-2: var(--ok); /* = emerald-400 */
 }
 
 .page-actions-market { @apply flex items-center gap-3; }

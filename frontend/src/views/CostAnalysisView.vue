@@ -348,7 +348,7 @@ onActivated(() => { if (!activatedOnce) { activatedOnce = true; return; } void l
 .cost-analysis-view {
   /* 图表用色:主折线 = 全站 accent,次折线 = emerald(与全站状态色系一致) */
   --cost-accent: #2563eb; /* = accent DEFAULT */
-  --cost-accent-2: #34d399; /* = emerald-400 */
+  --cost-accent-2: var(--ok); /* = emerald-400 */
 }
 
 .page-actions-cost { @apply flex items-center gap-3; }

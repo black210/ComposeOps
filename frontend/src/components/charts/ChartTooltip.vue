@@ -53,8 +53,8 @@ function formatTime(timestamp) {
 <style scoped>
 .chart-tooltip {
   position: absolute;
-  background: #18181b;
-  border: 1px solid #38BDF8;
+  background: var(--canvas-mid-2);
+  border: 1px solid var(--cyan-strong);
   border-radius: 0.375rem;
   padding: 0.5rem 0.75rem;
   pointer-events: none;
@@ -64,14 +64,14 @@ function formatTime(timestamp) {
 
 .tooltip-time {
   font-size: 0.75rem;
-  color: #a1a1aa;
+  color: var(--text-soft);
   margin-bottom: 0.25rem;
 }
 
 .tooltip-value {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #38BDF8;
+  color: var(--cyan-strong);
 }
 
 .tooltip-metric {
@@ -90,12 +90,12 @@ function formatTime(timestamp) {
 }
 
 .tooltip-metric-label {
-  color: #a1a1aa;
+  color: var(--text-soft);
   font-weight: 500;
 }
 
 .tooltip-metric-value {
-  color: #e4e4e7;
+  color: var(--text-strong);
   font-weight: 600;
 }
 </style>

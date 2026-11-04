@@ -43,7 +43,8 @@
   </div>
 </template>
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useTerminalTheme } from '../lib/theme.js';
 import { usePullRefresh } from '../composables/usePullRefresh.js';
 import { useRoute } from 'vue-router';
 import { Plug, Unplug } from 'lucide-vue-next';
@@ -52,6 +53,8 @@ import { Terminal } from '@xterm/xterm'; import { FitAddon } from '@xterm/addon-
 import { api, wsUrl } from '../api/client.js';
 import { useWebSocket } from '../composables/useWebSocket.js';
 const route = useRoute(); const projects = ref([]); const projectId = ref(route.query.projectId || ''); const containerId = ref(route.query.containerId || ''); const cmd = ref('sh'); const termReady = ref(false); const error = ref(''); const capabilities = ref({ shellEnabled: false }); const termEl = ref(null); let term; let fit; let resizeObserver;
+const terminalTheme = useTerminalTheme();
+watch(terminalTheme, value => { if (term) term.options.theme = value; });
 
 /**
  * 终端不做自动重连:exec 会话无法续接,静默重连只会开出一个新 shell,
@@ -82,7 +85,7 @@ usePullRefresh(async () => { projects.value = (await api.getProjects()).projects
 onMounted(async () => {
   [projects.value, capabilities.value] = await Promise.all([api.getProjects().then((r) => r.projects.filter((project) => project.managed)), api.getCapabilities()]);
   window.addEventListener('composeops:host-changed', onHostChanged);
-  term = new Terminal({ fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace', fontSize: 13, cursorBlink: true, theme: { background: '#0b0d10', foreground: '#e5e7eb' } }); fit = new FitAddon(); term.loadAddon(fit); term.open(termEl.value); nextTick(() => { fit.fit(); termReady.value = true; });
+  term = new Terminal({ fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace', fontSize: 13, cursorBlink: true, theme: terminalTheme.value }); fit = new FitAddon(); term.loadAddon(fit); term.open(termEl.value); nextTick(() => { fit.fit(); termReady.value = true; });
   term.onData((data) => socket.send(data)); term.onResize(({ cols, rows }) => socket.send(JSON.stringify({ type: 'resize', cols, rows })));
   resizeObserver = new ResizeObserver(() => fit.fit()); resizeObserver.observe(termEl.value);
   if (containerId.value && capabilities.value.shellEnabled && projects.value.some((project) => project.id === projectId.value)) connect();

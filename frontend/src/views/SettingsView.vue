@@ -56,6 +56,7 @@
     <section v-if="tab === 'personal'" class="settings-section">
       <h2 class="section-title">界面偏好</h2>
       <div class="ios-group">
+        <div class="ios-row"><div class="ios-row-main"><div class="ios-row-title">界面主题</div><div class="ios-row-desc">浅色、深色或跟随系统，切换后立即生效并保存在当前浏览器。</div></div><ThemeSelect /></div>
         <div class="ios-row"><div class="ios-row-main"><div class="ios-row-title">自动刷新间隔（秒）</div><div class="ios-row-desc">服务、监控等页面的轮询周期,最小 3 秒。</div></div><div class="ios-row-control"><input v-model.number="preferences.refreshInterval" type="number" min="3" max="300" class="input max-w-24! text-center" aria-label="自动刷新间隔（秒）" /></div></div>
         <div class="ios-row"><div class="ios-row-main"><div class="ios-row-title">日志默认行数</div><div class="ios-row-desc">打开日志页时默认拉取的行数,10–5000。</div></div><div class="ios-row-control"><input v-model.number="preferences.logTail" type="number" min="10" max="5000" class="input max-w-24! text-center" aria-label="日志默认行数" /></div></div>
       </div>
@@ -296,6 +297,7 @@ import ConfirmDialog from '../components/common/ConfirmDialog.vue';
 import BaseModal from '../components/common/BaseModal.vue';
 import AiChannelsPanel from '../components/settings/AiChannelsPanel.vue';
 import AgentPoliciesPanel from '../components/settings/AgentPoliciesPanel.vue';
+import ThemeSelect from '../components/common/ThemeSelect.vue';
 const tabs = [{ id: 'ai', label: 'AI', icon: markRaw(Bot) }, { id: 'agent-policy', label: 'Agent 策略', icon: markRaw(ShieldCheck) }, { id: 'personal', label: '偏好', icon: markRaw(SlidersHorizontal) }, { id: 'notifications', label: '通知', icon: markRaw(Bell) }, { id: 'maintenance', label: '维护', icon: markRaw(Wrench) }, { id: 'mounts', label: '项目纳管', icon: markRaw(FolderCog) }, { id: 'hosts', label: 'Docker 节点', icon: markRaw(Server) }, { id: 'mcp', label: 'MCP', icon: markRaw(Plug) }, { id: 'about', label: '关于', icon: markRaw(Info) }];
 const route = useRoute();
 const router = useRouter();

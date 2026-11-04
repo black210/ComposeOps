@@ -523,7 +523,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Archive, Download, Plus, RefreshCw } from 'lucide-vue-next';
 import { api } from '../api/client.js';
@@ -539,7 +539,8 @@ const tabs = [
 ];
 const route = useRoute(),
   router = useRouter();
-const tab = ref(tabs.some((t) => t.id === route.query.tab) ? route.query.tab : 'containers');
+const normalizeTab = (value) => (tabs.some((t) => t.id === value) ? value : 'containers');
+const tab = ref(normalizeTab(route.query.tab));
 const data = ref({ containers: [], backups: [], tasks: [], hostId: '', settings: {} });
 const targets = ref([]),
   selected = ref([]),
@@ -618,6 +619,17 @@ function setTab(value) {
   tab.value = value;
   router.replace({ query: { ...route.query, tab: value } });
 }
+watch(
+  () => route.query.tab,
+  (value) => {
+    const next = normalizeTab(value);
+    if (next === tab.value) return;
+    tab.value = next;
+    plan.value = null;
+    confirmed.value = false;
+    keySaved.value = false;
+  }
+);
 function tabKeydown(event) {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
   event.preventDefault();

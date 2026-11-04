@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
+import { reactive } from 'vue';
 const client = vi.hoisted(() =>
   Object.fromEntries(
     [
@@ -18,8 +19,9 @@ const client = vi.hoisted(() =>
   )
 );
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
+const route = vi.hoisted(() => ({ current: null }));
 vi.mock('../src/api/client.js', () => ({ api: client }));
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => router }));
+vi.mock('vue-router', () => ({ useRoute: () => route.current, useRouter: () => router }));
 import MaintenanceView from '../src/views/MaintenanceView.vue';
 let wrapper;
 const id = 'a'.repeat(64);
@@ -51,6 +53,7 @@ const backupPlan = () => ({
 beforeEach(() => {
   Object.values(client).forEach((fn) => fn.mockReset());
   router.replace.mockReset();
+  route.current = reactive({ query: {} });
   client.getMaintenance.mockResolvedValue(overview());
   client.getSyncTargets.mockResolvedValue({ targets: [] });
   client.prepareMaintenance.mockResolvedValue(backupPlan());
@@ -74,6 +77,21 @@ async function show() {
 }
 const button = (text) => wrapper.findAll('button').find((b) => b.text() === text);
 describe('完整备份界面的真实确认条件', () => {
+  it('已打开运维页时，旧入口及浏览器导航仍切换目标页签并退出旧确认', async () => {
+    await show();
+    await button('备份').trigger('click');
+    await flushPromises();
+    expect(button('开始完整备份')).toBeDefined();
+    route.current.query = { tab: 'tasks' };
+    await flushPromises();
+    expect(button('开始完整备份')).toBeUndefined();
+    expect(wrapper.get('#maintenance-tab-tasks').attributes('aria-selected')).toBe('true');
+    expect(wrapper.text()).toContain('原定时运维计划');
+    route.current.query = {};
+    await flushPromises();
+    expect(wrapper.get('#maintenance-tab-containers').attributes('aria-selected')).toBe('true');
+    expect(client.executeMaintenance).not.toHaveBeenCalled();
+  });
   it('完整范围先展示，停机影响与密钥保存必须都确认才能执行', async () => {
     await show();
     await button('备份').trigger('click');

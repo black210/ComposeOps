@@ -216,17 +216,12 @@
               </button>
             </div>
           </div>
-          <div
-            class="table-wrap maintenance-table-wrap"
-            tabindex="0"
-            aria-label="容器运维列表，窄屏可横向滚动"
-          >
+          <div class="table-wrap maintenance-table-wrap" aria-label="容器运维列表">
             <table class="data-table maintenance-table">
               <colgroup>
                 <col class="maintenance-col-check" />
                 <col />
                 <col class="maintenance-col-project" />
-                <col class="maintenance-col-state" />
                 <col class="maintenance-col-update" />
                 <col class="maintenance-col-actions" />
               </colgroup>
@@ -235,14 +230,17 @@
                   <th><span class="sr-only">选择</span></th>
                   <th>容器 / 当前镜像</th>
                   <th>所属应用</th>
-                  <th>状态</th>
-                  <th>镜像更新</th>
+                  <th class="maintenance-status-heading">更新 / 状态</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="container in filtered" :key="container.id">
-                  <td>
+                <tr
+                  v-for="container in filtered"
+                  :key="container.id"
+                  :class="{ 'maintenance-selected': selected.includes(container.id) }"
+                >
+                  <td class="maintenance-select-cell">
                     <input
                       v-model="selected"
                       type="checkbox"
@@ -252,43 +250,54 @@
                       :title="operationReason(container)"
                     />
                   </td>
-                  <td>
-                    <p class="font-medium text-surface-100 break-words">{{ container.name }}</p>
-                    <p class="text-xs text-muted break-all">{{ container.image }}</p>
-                    <span v-if="container.helper || container.self" class="text-xs text-muted">{{
-                      container.helper ? '面板临时辅助容器' : '当前运维面板'
-                    }}</span>
+                  <td class="maintenance-main-cell">
+                    <p class="maintenance-container-name" :title="container.name">
+                      {{ container.name }}
+                    </p>
+                    <p class="maintenance-container-image text-muted" :title="container.image">
+                      {{ container.image }}
+                    </p>
                   </td>
-                  <td>
-                    {{ container.projectName || (container.helper ? '辅助容器' : '独立容器') }}
+                  <td class="maintenance-origin-cell">
+                    <p class="maintenance-project-name" :title="container.projectName">
+                      {{ container.projectName || (container.helper ? '辅助容器' : '独立容器') }}
+                    </p>
+                    <p class="text-xs text-muted">
+                      {{
+                        container.helper
+                          ? '临时辅助容器'
+                          : container.self
+                            ? '当前运维面板'
+                            : container.projectName
+                              ? 'Compose 应用'
+                              : '独立容器'
+                      }}
+                    </p>
                   </td>
-                  <td>
-                    <span class="maintenance-state">{{ stateLabel(container.state) }}</span>
-                  </td>
-                  <td>
+                  <td class="maintenance-status-cell">
                     <div class="maintenance-update-cell">
-                      <span
+                      <button
+                        type="button"
                         class="maintenance-update-label"
                         :class="updates[container.id]?.hasUpdate ? 'text-amber-400' : 'text-muted'"
+                        :title="updateDetail(container)"
+                        :aria-label="container.name + '：' + updateLabel(container) + '，查看详情'"
+                        @click="updateTarget = container"
                       >
                         {{ updateLabel(container) }}
-                      </span>
-                      <span
-                        v-if="updateDetail(container)"
-                        class="maintenance-update-detail text-muted"
-                        :title="updateDetail(container)"
-                        >{{ updateDetail(container) }}</span
-                      >
-                      <button
-                        v-if="updates[container.id]?.status === 'failed' && !checkingUpdates"
-                        class="text-xs text-accent maintenance-retry"
-                        @click="checkUpdates(true, container.projectId)"
-                      >
-                        重试
                       </button>
+                      <span
+                        class="maintenance-state"
+                        :class="
+                          container.state === 'running' ? 'maintenance-running' : 'text-muted'
+                        "
+                      >
+                        <span class="maintenance-state-dot" aria-hidden="true"></span
+                        >{{ stateLabel(container.state) }}
+                      </span>
                     </div>
                   </td>
-                  <td>
+                  <td class="maintenance-actions-cell">
                     <div class="maintenance-row-actions">
                       <button
                         class="btn-secondary"
@@ -500,6 +509,25 @@
       </div>
     </template>
 
+    <BaseModal :show="!!updateTarget" title="镜像检查详情" @close="updateTarget = null">
+      <div v-if="updateTarget" class="p-4 space-y-4">
+        <div>
+          <p class="font-medium break-all">{{ updateTarget.name }}</p>
+          <p class="mt-1 text-xs text-muted break-all">{{ updateTarget.image }}</p>
+        </div>
+        <p class="text-sm">{{ updateDetail(updateTarget) }}</p>
+        <p v-if="updates[updateTarget.id]?.checkedAt" class="text-xs text-muted">
+          检查于 {{ time(updates[updateTarget.id].checkedAt) }}
+        </p>
+        <button
+          v-if="updates[updateTarget.id]?.status === 'failed' && !checkingUpdates"
+          class="btn-secondary"
+          @click="retryUpdateTarget"
+        >
+          重试
+        </button>
+      </div>
+    </BaseModal>
     <BaseModal
       :show="proxyOpen"
       title="镜像检查代理"
@@ -674,6 +702,7 @@ const targets = ref([]),
   query = ref(''),
   backupPath = ref('');
 const updates = ref({});
+const updateTarget = ref(null);
 const proxyUrl = ref(''),
   proxyDraft = ref(''),
   proxyOpen = ref(false),
@@ -997,10 +1026,10 @@ async function checkUpdates(force = false, projectId = null) {
 function updateLabel(container) {
   if (container.helper) return '无需检查';
   if (!container.projectId) return '需 Compose 定义';
-  if (container.updateCheckAvailable === false) return '未满足检查条件';
+  if (container.updateCheckAvailable === false) return '未授权检查';
   const item = updates.value[container.id];
   if (!item) return '尚未检查';
-  if (item.hasUpdate) return '有镜像更新';
+  if (item.hasUpdate) return '可更新';
   return (
     {
       current: '已是最新',
@@ -1008,9 +1037,9 @@ function updateLabel(container) {
       checking: '检查中…',
       cancelled: '待重新检查',
       up_to_date: '已是最新',
-      pinned: '固定镜像',
+      pinned: '已固定',
       local_build: '本地构建',
-      local_only: '仅本地镜像',
+      local_only: '本地镜像',
       not_deployed: '尚未部署',
       failed: '检查失败',
       unknown: '无法比较',
@@ -1019,6 +1048,11 @@ function updateLabel(container) {
       unresolved: '未解析',
     }[item.status] || '无法比较'
   );
+}
+function retryUpdateTarget() {
+  const projectId = updateTarget.value?.projectId;
+  updateTarget.value = null;
+  if (projectId) void checkUpdates(true, projectId);
 }
 function updateDetail(container) {
   if (container.helper) return '面板临时工作容器';
@@ -1156,6 +1190,7 @@ function hostChanged() {
   data.value = { containers: [], tasks: [], backups: [], settings: {} };
   selected.value = [];
   updates.value = {};
+  updateTarget.value = null;
   backupPath.value = '';
   plan.value = null;
   draft.value = null;
@@ -1231,37 +1266,149 @@ onBeforeUnmount(() => {
 }
 .maintenance-table-wrap {
   min-width: 0;
+  overflow: hidden;
+  background: rgb(var(--ui-panel-rgb));
 }
 .maintenance-table {
   table-layout: fixed;
-  min-width: 960px;
+  width: 100%;
 }
 .maintenance-col-check {
-  width: 48px;
+  width: 44px;
 }
 .maintenance-col-project {
-  width: 150px;
-}
-.maintenance-col-state {
-  width: 92px;
+  width: 22%;
 }
 .maintenance-col-update {
-  width: 210px;
+  width: 156px;
 }
 .maintenance-col-actions {
-  width: 180px;
+  width: 168px;
 }
 .maintenance-table th {
   white-space: nowrap;
 }
 .maintenance-table td {
   font-family: inherit;
+  padding-block: 14px;
+  height: 78px;
 }
-.maintenance-table td:nth-child(2) {
-  overflow-wrap: anywhere;
+.maintenance-container-name,
+.maintenance-container-image,
+.maintenance-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.maintenance-table td:nth-child(2) p {
-  font-family: ui-monospace, SFMono-Regular, monospace;
+.maintenance-container-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-surface-100);
+}
+.maintenance-container-image {
+  font-size: 12px;
+  margin-top: 3px;
+}
+.maintenance-project-name {
+  margin-bottom: 3px;
+}
+.maintenance-table .maintenance-selected {
+  background: rgb(59 130 246 / 0.07);
+}
+.maintenance-status-heading {
+  text-align: right;
+}
+.maintenance-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.maintenance-running {
+  color: light-dark(#087552, #76d8b0);
+}
+.maintenance-state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.maintenance-update-label {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  min-height: 24px;
+  text-align: right;
+}
+.maintenance-update-label:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.maintenance-table .maintenance-actions-cell {
+  padding-left: 12px;
+}
+.maintenance-table .maintenance-select-cell {
+  padding-right: 0;
+}
+.maintenance-table .maintenance-status-cell {
+  text-align: right;
+}
+.maintenance-table .maintenance-main-cell,
+.maintenance-table .maintenance-origin-cell {
+  min-width: 0;
+}
+.maintenance-row-actions {
+  justify-content: flex-end;
+}
+@media (max-width: 1100px) {
+  .maintenance-table thead,
+  .maintenance-table colgroup {
+    display: none;
+  }
+  .maintenance-table,
+  .maintenance-table tbody {
+    display: block;
+  }
+  .maintenance-table tbody tr {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    gap: 10px 12px;
+    padding: 16px;
+    border-top: 1px solid rgb(var(--ui-line-rgb) / 0.22);
+  }
+  .maintenance-table tbody tr:first-child {
+    border-top: 0;
+  }
+  .maintenance-table td {
+    display: block;
+    border: 0;
+    padding: 0;
+    height: auto;
+  }
+  .maintenance-table .maintenance-select-cell {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    padding-top: 3px;
+  }
+  .maintenance-table .maintenance-main-cell {
+    grid-column: 2 / 4;
+  }
+  .maintenance-table .maintenance-origin-cell {
+    grid-column: 2;
+  }
+  .maintenance-table .maintenance-status-cell {
+    grid-column: 3;
+    align-self: end;
+  }
+  .maintenance-table .maintenance-actions-cell {
+    grid-column: 2 / 4;
+    padding-left: 0;
+  }
+  .maintenance-row-actions {
+    gap: 12px;
+  }
 }
 .maintenance-state,
 .maintenance-update-label {
@@ -1269,21 +1416,8 @@ onBeforeUnmount(() => {
 }
 .maintenance-update-cell {
   display: grid;
-  gap: 4px;
-}
-.maintenance-update-detail {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-size: 11px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.maintenance-retry {
-  justify-self: start;
-  min-height: 28px;
-  white-space: nowrap;
+  justify-items: end;
+  gap: 3px;
 }
 .maintenance-row-actions {
   display: flex;

@@ -148,6 +148,8 @@ describe('完整备份界面的真实确认条件', () => {
     finishSlow.reject(new Error('镜像仓库连接超时'));
     await flushPromises();
     expect(wrapper.text()).toContain('检查失败');
+    expect(wrapper.text()).not.toContain('镜像仓库连接超时');
+    await wrapper.get('button[aria-label="b-web：检查失败，查看详情"]').trigger('click');
     expect(wrapper.text()).toContain('镜像仓库连接超时');
     expect(wrapper.text()).toContain('已检查 2 个应用');
     expect(button('重试')).toBeDefined();
@@ -200,6 +202,8 @@ describe('完整备份界面的真实确认条件', () => {
       await vi.advanceTimersByTimeAsync(35_000);
       await flushPromises();
       expect(requestSignal.aborted).toBe(true);
+      expect(wrapper.text()).not.toContain('检查超过 35 秒');
+      await wrapper.get('button[aria-label="app-web：检查失败，查看详情"]').trigger('click');
       expect(wrapper.text()).toContain('检查超过 35 秒');
       client.getProjectUpdates.mockImplementationOnce(
         () =>
@@ -213,7 +217,7 @@ describe('完整备份界面的真实确认条件', () => {
       await flushPromises();
       late({ images: [{ service: 'web', status: 'updated', hasUpdate: true }] });
       await flushPromises();
-      expect(wrapper.text()).not.toContain('有镜像更新');
+      expect(wrapper.text()).not.toContain('可更新');
       expect(button('停止检查')).toBeUndefined();
     } finally {
       vi.useRealTimers();
@@ -233,6 +237,34 @@ describe('完整备份界面的真实确认条件', () => {
     await flushPromises();
     expect(wrapper.get('#maintenance-tab-containers').attributes('aria-selected')).toBe('true');
     expect(client.executeMaintenance).not.toHaveBeenCalled();
+  });
+  it('紧凑列表将简短更新状态与运行状态放在同一格，技术说明只在详情展示', async () => {
+    const reason = '已按当前平台的镜像内容与容器实际使用的镜像比较';
+    client.getMaintenance.mockResolvedValue({
+      ...overview(),
+      containers: [
+        {
+          ...overview().containers[0],
+          projectId: 'app',
+          service: 'web',
+          updateCheckAvailable: true,
+        },
+      ],
+    });
+    client.getProjectUpdates.mockResolvedValue({
+      checkedAt: 1000,
+      images: [{ service: 'web', status: 'updated', hasUpdate: true, reason }],
+    });
+    await show();
+    const cell = wrapper.get('.maintenance-status-cell');
+    expect(cell.text()).toContain('可更新');
+    expect(cell.text()).toContain('运行中');
+    expect(cell.find('.maintenance-state-dot').exists()).toBe(true);
+    expect(wrapper.find('.maintenance-update-detail').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain(reason);
+    await cell.get('button').trigger('click');
+    expect(wrapper.text()).toContain(reason);
+    expect(wrapper.get('.maintenance-origin-cell').text()).toContain('Compose 应用');
   });
   it('完整范围先展示，停机影响与密钥保存必须都确认才能执行', async () => {
     await show();

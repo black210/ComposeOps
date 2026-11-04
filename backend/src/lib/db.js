@@ -638,6 +638,19 @@ const MIGRATIONS = [
       }
     },
   },
+  {
+    version: 19,
+    name: 'project_credentials',
+    up(database) {
+      database.exec(`CREATE TABLE IF NOT EXISTS project_credentials (
+        host_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 0,
+        entries_json TEXT NOT NULL DEFAULT '[]',
+        PRIMARY KEY(host_id, project_id)
+      )`);
+    },
+  },
 ];
 
 /** 幂等加列:列已存在时直接返回 false,不抛错。 */

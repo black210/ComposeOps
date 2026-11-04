@@ -149,6 +149,8 @@ async function scanProjectsUncached(activeDocker, nodeType) {
     project.containers.push({
       id: c.Id,
       name: (c.Names[0] || '').replace(/^\//, ''),
+      service: labels['com.docker.compose.service'] || '',
+      networkMode: c.HostConfig?.NetworkMode || '',
       state: c.State,
       statusText: c.Status,
       image: c.Image,

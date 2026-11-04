@@ -10,6 +10,7 @@ import { readContainerStat } from '../services/stats.js';
 import { validateComposeSemantics, previewComposeChange } from '../services/compose-validator.js';
 import { listProjectDbContainers, runDbDump } from '../services/db-dumper.js';
 import { scanProjectWebPorts, buildWebUiLinks } from '../services/project-ports.js';
+import { registerProjectCredentialRoutes } from './project-credentials.js';
 import {
   addOperation,
   getComposeBackup,
@@ -90,6 +91,7 @@ const CONTENT_MAX = 1048576;
 const fileIndexField = { type: 'number' };
 
 export default async function projectRoutes(fastify) {
+  registerProjectCredentialRoutes(fastify);
   fastify.get('/', async () => ({ projects: await scanProjects() }));
 
   fastify.get('/mount-plan', async () => buildMountPlan(await scanProjects()));

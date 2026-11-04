@@ -179,6 +179,8 @@ export const api = {
   // image update radar
   getProjectUpdates: (projectId, force = false) => request(`/projects/${projectId}/updates?force=${force ? '1' : '0'}`),
   getProjectWebUi: (projectId) => request(`/projects/${projectId}/webui`),
+  getProjectCredentials: (projectId) => request(`/projects/${projectId}/credentials`, { cache: 'no-store' }),
+  saveProjectCredentials: (projectId, payload) => request(`/projects/${projectId}/credentials`, { method: 'PUT', body: JSON.stringify(payload) }),
   listDbDumpTargets: (projectId) => request(`/projects/${projectId}/db-dump`),
   listCronJobs: () => request('/cron'),
   createCronJob: (payload) => request('/cron', { method: 'POST', body: JSON.stringify(payload) }),

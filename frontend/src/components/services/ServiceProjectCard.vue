@@ -25,10 +25,11 @@
         <span class="hidden md:block text-muted font-mono truncate flex-1" :title="project.workingDir">{{ project.workingDir }}</span>
         <ChevronDown class="w-4 h-4 text-surface-500 shrink-0 transition-transform" :class="{ 'rotate-180': expanded }" />
       </button>
-      <WebUiLauncher v-if="webuiLinks.length" :links="webuiLinks" class="hidden md:inline-flex" />
       <button v-if="updateInfo?.hasUpdate" class="update-badge shrink-0" title="检测到镜像可更新,点击一键升级" @click.stop="$emit('upgrade')"><Sparkles class="w-3.5 h-3.5" />Update Available</button>
+      <button class="icon-btn shrink-0" title="密钥：维护账号密码" aria-label="管理账号密码" @click="showCredentials = true"><KeyRound class="w-4 h-4" /></button>
       <button class="icon-btn" title="编辑备注" aria-label="编辑备注" @click="editNote(project)"><Pencil class="w-4 h-4" /></button>
     </header>
+    <WebUiLauncher v-if="webuiLinks.length" :links="webuiLinks" class="px-4 pb-3" />
 
     <div v-if="expanded" class="border-t border-surface-800 p-3 md:p-4 space-y-3">
       <div class="flex flex-col lg:flex-row lg:items-center gap-2">
@@ -58,6 +59,7 @@
         <button v-if="updateInfo?.hasUpdate" class="btn-secondary" :disabled="!project.editable || locked" title="一键平滑升级到最新镜像" @click="$emit('upgrade')"><Sparkles class="w-4 h-4" />平滑升级</button>
         <router-link class="btn-ghost" :class="{ 'pointer-events-none opacity-40': !project.editable }" :to="`/compose?projectId=${project.id}`"><FileCode2 class="w-4 h-4" />配置</router-link>
         <button class="btn-ghost" :class="{ 'pointer-events-none opacity-40': !project.editable }" :disabled="!project.editable || busy" title="编辑项目环境变量 (.env)" @click="$emit('env')"><KeyRound class="w-4 h-4" />环境变量</button>
+        <button class="btn-ghost" @click="showCredentials = true"><KeyRound class="w-4 h-4" />密钥</button>
         <button class="btn-ghost" :disabled="!project.managed || busy" @click="$emit('activity')"><History class="h-4 w-4" />活动</button>
         <button v-if="dbContainers.length" class="btn-ghost" :disabled="!project.managed || busy" title="一键导出数据库备份并下载" @click="$emit('db-dump')"><Database class="h-4 w-4 text-emerald-300" />备份数据库</button>
       </div>
@@ -85,7 +87,8 @@
                 <span v-if="metrics[container.id]?.cpu != null" class="metric-chip" :class="metrics[container.id].cpu >= 85 ? 'bg-rose-950/50 text-rose-300' : metrics[container.id].cpu >= 60 ? 'bg-amber-950/50 text-amber-300' : 'text-emerald-300'">CPU {{ numberValue(metrics[container.id].cpu).toFixed(1) }}%</span>
                 <span v-if="metrics[container.id]?.mem != null" class="metric-chip" :class="metrics[container.id].mem >= 90 ? 'bg-rose-950/50 text-rose-300' : 'text-emerald-300'">MEM {{ numberValue(metrics[container.id].memUsageMB).toFixed(0) }}MB / {{ numberValue(metrics[container.id].mem).toFixed(1) }}%</span>
               </div>
-              <div class="text-muted truncate">{{ container.image }}<span v-if="container.ports.length"> · {{ portText(container) }}</span><span v-if="container.health" :class="healthClass(container.health)"> · {{ container.health }}</span></div>
+              <div class="text-muted truncate">{{ container.image }}<span v-if="container.health" :class="healthClass(container.health)"> · {{ container.health }}</span></div>
+              <ContainerPorts :container="container" :links="webuiLinks.filter((link) => link.containerId === container.id)" />
               <div v-if="container.stoppedAt || container.startedAt" class="text-muted text-[11px]">{{ containerStateHint(container) }}</div>
             </div>
             <SparklineChart v-if="metrics[container.id]?.history && metrics[container.id].history.length >= 2" :cpu="metrics[container.id].history.map((point) => point.cpuPercent)" :mem="metrics[container.id].history.map((point) => point.memPercent)" class="hidden sm:block" />
@@ -105,7 +108,7 @@
               <StatusBadge :status="container.state" size="sm" />
             </div>
             <div class="text-[11px] text-muted truncate font-mono">{{ container.image }}</div>
-            <div v-if="container.ports.length" class="text-[11px] text-surface-400">{{ portText(container) }}</div>
+            <ContainerPorts :container="container" :links="webuiLinks.filter((link) => link.containerId === container.id)" />
             <div class="flex flex-wrap gap-1.5 mt-0.5">
               <span v-if="metrics[container.id]?.cpu != null" class="metric-chip text-[10px]">CPU {{ numberValue(metrics[container.id].cpu).toFixed(1) }}%</span>
               <span v-if="metrics[container.id]?.mem != null" class="metric-chip text-[10px]">MEM {{ numberValue(metrics[container.id].memUsageMB).toFixed(0) }}MB</span>
@@ -151,6 +154,7 @@
       </div>
     </div>
   </article>
+  <ProjectCredentialsModal v-if="showCredentials" :key="project.id" :project="project" @close="showCredentials = false" />
   <ConfirmDialog :show="stopConfirm" title="停止项目容器" :message="`确认停止 ${project.projectName} 中现有的容器?不会删除容器和网络。`" tone="warning" confirm-text="停止容器" @confirm="confirmStop" @cancel="stopConfirm = false" />
 </template>
 
@@ -159,6 +163,8 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, 
 import { Bot, ChevronDown, Database, Download, FileCode2, FolderCog, GitBranch, History, KeyRound, Layers, ListTree, Pencil, Play, RotateCw, ScrollText, Sparkles, Square, Star, TerminalSquare } from 'lucide-vue-next';
 import StatusBadge from '../common/StatusBadge.vue';
 import WebUiLauncher from './WebUiLauncher.vue';
+import ContainerPorts from './ContainerPorts.vue';
+import ProjectCredentialsModal from './ProjectCredentialsModal.vue';
 import SparklineChart from '../common/SparklineChart.vue';
 import { api, streamProjectStats } from '../../api/client.js';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
@@ -174,6 +180,7 @@ const props = defineProps({
 });
 const emit = defineEmits(['toggle-expand', 'toggle-select', 'action', 'activity', 'env', 'db-dump', 'upgrade', 'refresh']);
 const stopConfirm = ref(false);
+const showCredentials = ref(false);
 
 const metrics = ref({});
 const updateInfo = ref(null);
@@ -188,15 +195,15 @@ watch(() => props.expanded, (expanded) => {
   if (!expanded) { closeStats(); return; }
   openStats();
 });
-watch(() => props.project.id, () => { closeStats(); checkUpdates(); loadWebUi(); loadDependencies(); loadEnvPreview(); if (props.expanded) openStats(); });
-onMounted(() => { checkUpdates(); loadWebUi(); loadDependencies(); loadEnvPreview(); if (props.expanded) openStats(); });
+watch(() => props.project.id, () => { showCredentials.value = false; closeStats(); checkUpdates(); loadDependencies(); loadEnvPreview(); if (props.expanded) openStats(); });
+onMounted(() => { checkUpdates(); loadDependencies(); loadEnvPreview(); if (props.expanded) openStats(); });
 let activatedBefore = false;
 onActivated(() => {
   if (!activatedBefore) { activatedBefore = true; return; }
   if (props.expanded) openStats();
 });
-onDeactivated(closeStats);
-onBeforeUnmount(closeStats);
+onDeactivated(() => { showCredentials.value = false; closeStats(); });
+onBeforeUnmount(() => { webuiRequest++; closeStats(); });
 
 async function checkUpdates() {
   updateInfo.value = null;
@@ -208,16 +215,20 @@ async function checkUpdates() {
   }
 }
 
+let webuiRequest = 0;
 async function loadWebUi() {
+  const requestId = ++webuiRequest;
   webuiLinks.value = [];
   if (!props.project.managed) return;
   try {
     const data = await api.getProjectWebUi(props.project.id);
-    webuiLinks.value = (data?.links || []).flatMap((entry) => entry.ports.map((port) => ({ port: port.port, url: port.url, containerName: entry.containerName })));
+    if (requestId !== webuiRequest) return;
+    webuiLinks.value = (data?.links || []).flatMap((entry) => entry.ports.map((port) => ({ port: port.port, url: port.url, containerId: entry.containerId, containerName: entry.containerName, serviceName: entry.serviceName })));
   } catch {
-    webuiLinks.value = []; // 检测失败静默
+    if (requestId === webuiRequest) webuiLinks.value = []; // 检测失败静默
   }
 }
+watch(() => JSON.stringify([props.project.id, props.project.managed, props.project.containers.map(({ id, state, ports }) => ({ id, state, ports }))]), loadWebUi, { immediate: true });
 
 async function loadEnvPreview() {
   envPreview.value = [];
@@ -335,7 +346,6 @@ async function editNote(project) {
   if (note === null) return;
   project.note = note.slice(0, 500); await api.saveProjectPreference(project.id, { note: project.note });
 }
-function portText(container) { return container.ports.map((port) => `${port.public}:${port.private}`).join(', '); }
 function healthClass(health) { return health === 'unhealthy' ? 'text-rose-400' : health === 'healthy' ? 'text-emerald-400' : 'text-amber-400'; }
 function timeAgo(ts) {
   if (!ts) return '';

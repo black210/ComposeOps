@@ -10,6 +10,7 @@ import { addComposeBackup } from '../lib/db.js';
 import { safeProjectMountPath } from './mount-plan.js';
 import { getActiveHost, getActiveHostType } from './docker-hosts.js';
 import { sshExec, sshReadFile, sshWriteFile } from './remote-shell.js';
+import { assertProjectOperationAllowed } from './project-operation-lock.js';
 
 let runnerImagePromise;
 const workspaceRunners = new Map();
@@ -182,6 +183,7 @@ async function acquireRunner(project) {
 }
 
 async function withRunner(project, callback) {
+  assertProjectOperationAllowed(project.id);
   const hostType = getActiveHostType();
   if (hostType === 'ssh') {
     try {
@@ -236,6 +238,14 @@ export async function closeAllWorkspaceRunners() {
   const entries = [...workspaceRunners.values()];
   for (const entry of entries) retireRunner(entry);
   await Promise.all(entries.map((entry) => destroyRunner(entry)));
+}
+
+/** 完整备份前只回收所选项目的空闲工作容器，不能强杀正在执行的命令。 */
+export async function closeIdleProjectRunners(projectIds) {
+  const entries=[...workspaceRunners.values()].filter(e=>projectIds.includes(e.projectId));
+  if(entries.some(e=>e.active>0))throw Object.assign(new Error('所选应用有正在执行的工作区命令，请等待完成'),{statusCode:409});
+  for(const entry of entries)retireRunner(entry);
+  await Promise.all(entries.map(entry=>destroyRunner(entry)));
 }
 
 export function workspaceRunnerStats() {

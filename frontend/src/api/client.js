@@ -115,6 +115,17 @@ export function bumpHostEpoch() {
 }
 
 export const api = {
+  getMaintenance: () => request('/maintenance/', { force: true }),
+  saveMaintenanceSettings: (backupPath) => request('/maintenance/settings', { method: 'PUT', body: JSON.stringify({ backupPath }) }),
+  prepareMaintenance: (payload) => request('/maintenance/plans', { method: 'POST', body: JSON.stringify(payload) }),
+  executeMaintenance: (payload) => request('/maintenance/execute', { method: 'POST', body: JSON.stringify(payload) }),
+  recoverMaintenanceTask: (id) => request(`/maintenance/tasks/${encodeURIComponent(id)}/recover`, { method: 'POST', body: JSON.stringify({ confirmed: true }) }),
+  getSyncTargets: () => request('/maintenance/targets', { force: true }),
+  saveSyncTarget: (payload) => request('/maintenance/targets', { method: 'POST', body: JSON.stringify(payload) }),
+  setSyncAutomatic: (id, auto) => request(`/maintenance/targets/${encodeURIComponent(id)}/auto`, { method: 'PUT', body: JSON.stringify({ auto }) }),
+  startBackupSync: (payload) => request('/maintenance/sync', { method: 'POST', body: JSON.stringify(payload) }),
+  authorize115: (targetId) => request('/maintenance/115/authorize', { method: 'POST', body: JSON.stringify({ targetId }) }),
+  pollAuthorize115: (id) => request(`/maintenance/115/authorize/${encodeURIComponent(id)}/poll`, { method: 'POST' }),
   getAuthStatus: () => request('/auth/status'),
   // setupToken:服务端设置 SETUP_TOKEN 环境变量时,首次初始化必须携带该引导令牌
   setup: (password, setupToken = '') => request('/auth/setup', { method: 'POST', body: JSON.stringify({ password, setupToken }) }),

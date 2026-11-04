@@ -2,7 +2,7 @@
 
 # ComposeOps
 
-> 此 fork 面向「中文单面板 + 完整备份恢复」二开。已增加**完整备份范围预检**；完整备份与恢复执行尚未实现。范围、基线及验收计划见[二开说明](docs/public/FORK_DEVELOPMENT.md)。
+> 此 fork 面向「中文单面板 + 完整备份恢复」二开。新增“运维”入口：完整备份、更新前备份、保存路径配置及 115 官方授权 / WebDAV 备份同步。支持隔离解密校验，实际恢复界面仍待实现；范围与限制见[完整备份说明](docs/public/FULL_BACKUP_OPERATIONS.md)及[二开说明](docs/public/FORK_DEVELOPMENT.md)。
 
 支持[浅色、深色和跟随系统](docs/public/THEMES.md)，可在顶部或设置中即时切换，首次访问默认浅色。
 

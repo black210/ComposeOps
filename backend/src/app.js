@@ -14,6 +14,7 @@ import jobRoutes from './routes/jobs.js';
 import hostRoutes from './routes/hosts.js';
 import opsRoutes from './routes/ops.js';
 import fullBackupRoutes from './routes/full-backup.js';
+import maintenanceRoutes from './routes/maintenance.js';
 import inspectionRoutes from './routes/inspection.js';
 import cronRoutes from './routes/cron.js';
 import metricsRoutes from './routes/metrics.js';
@@ -137,6 +138,7 @@ export async function buildApp({ logger = { level: process.env.LOG_LEVEL || 'inf
       await api.register(hostRoutes, { prefix: '/hosts' });
       await api.register(opsRoutes, { prefix: '/ops' });
       await api.register(fullBackupRoutes, { prefix: '/ops' });
+      await api.register(maintenanceRoutes, { prefix: '/maintenance' });
       await api.register(inspectionRoutes, { prefix: '/ops' });
       await api.register(cronRoutes, { prefix: '/cron' });
       await api.register(metricsRoutes, { prefix: '/metrics' });

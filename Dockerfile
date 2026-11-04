@@ -70,13 +70,14 @@ RUN if [ -n "$APT_MIRROR" ]; then \
       sed -i "s|deb.debian.org|$APT_MIRROR|g; s|http://$APT_MIRROR|https://$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
     fi \
  && apt-get update -o Acquire::Retries=5 -o Acquire::https::Timeout=30 \
- && apt-get install -y --no-install-recommends ca-certificates curl gnupg git openssh-client \
+ && apt-get install -y --no-install-recommends ca-certificates curl gnupg git openssh-client tar acl attr \
  && rm -rf /var/lib/apt/lists/* \
  # 构建期断言:任何一项缺失都让构建当场失败,而不是运行到用户点按钮时才报错。
  && docker --version \
  && docker compose version \
  && git --version \
- && ssh -V
+ && ssh -V \
+ && tar --version
 
 WORKDIR /app/backend
 

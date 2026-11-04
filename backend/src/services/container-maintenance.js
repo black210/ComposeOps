@@ -251,15 +251,20 @@ export async function maintenanceOverview() {
   };
 }
 // 纯范围判定：同 Compose 应用自动扩展；不把临时辅助容器或面板自身宣称为可完整备份。
-export function inventoryForBackup(all, ids, { selfId = '', backupPath = '', projects = [] } = {}) {
-  const selected = all.filter((c) => ids.includes(c.Id));
-  const groups = new Set(selected.map(group));
+export function inventoryForBackup(
+  all,
+  ids,
+  { selfId = '', backupPath = '', projects = [], action = 'backup' } = {},
+) {
+  const requested = all.filter((c) => ids.includes(c.Id));
+  const groups = new Set(requested.map(group));
+  const selected = action === 'update' ? all.filter((c) => groups.has(group(c))) : requested;
   const members = all.filter((c) => groups.has(group(c)));
   const blockers = [],
     warnings = [],
     declared = [],
     runtimeDependencies = [];
-  if (selected.length !== new Set(ids).size) blockers.push('部分所选容器已不存在，请刷新');
+  if (requested.length !== new Set(ids).size) blockers.push('部分所选容器已不存在，请刷新');
   const add = (kind, source) => {
     if (!declared.some((s) => s.kind === kind && s.source === source)) declared.push({ kind, source });
   };
@@ -333,6 +338,7 @@ export function inventoryForBackup(all, ids, { selfId = '', backupPath = '', pro
     )
     .map((s, index) => ({ ...s, index }));
   return {
+    updateScope: action === 'update' ? 'compose' : null,
     members,
     selected,
     sources,
@@ -354,7 +360,12 @@ export async function prepareMaintenance(input) {
   const raw = await docker.listContainers({ all: true, size: true });
   const all = [];
   for (const c of raw) all.push(await docker.getContainer(c.Id).inspect());
-  const plan = inventoryForBackup(all, input.containerIds, { selfId: self?.Id, backupPath, projects });
+  const plan = inventoryForBackup(all, input.containerIds, {
+    selfId: self?.Id,
+    backupPath,
+    projects,
+    action: input.action,
+  });
   if (
     input.action === 'update' &&
     plan.selected.some((c) => !c.Config.Labels?.['com.docker.compose.service'])
@@ -384,14 +395,6 @@ export async function prepareMaintenance(input) {
     try {
       const model = await composeModel(p),
         unresolved = await composeModel(p, true);
-      if (input.action === 'update') {
-        const selectedServices = new Set(plan.selected.filter((c) => group(c) === p.projectName + '\0' + p.workingDir)
-          .map((c) => c.Config.Labels['com.docker.compose.service']));
-        for (const [serviceName, config] of Object.entries(model.services || {})) {
-          if (selectedServices.has(serviceName) && (config.pull_policy === 'never' || config.pull_policy === 'build' || (config.build && config.pull_policy !== 'always')))
-            plan.blockers.push(`${p.projectName}/${serviceName} 使用本地构建或禁止拉取策略；需明确构建或拉取方案后更新，仍可完整备份`);
-        }
-      }
       const references = [];
       const addRef = (value) => {
         if (typeof value === 'string')
@@ -444,7 +447,10 @@ export async function prepareMaintenance(input) {
             definition.image.includes('@') ||
             ['never', 'build'].includes(definition.pull_policy)
           )
-            plan.blockers.push(service + ' 使用固定镜像或本地构建，需要先调整 Compose 镜像定义');
+            plan.blockers.push(
+              p.projectName + '/' + service +
+              ' 使用固定镜像、本地构建或禁止拉取策略；需先明确整个应用的更新方案，仍可完整备份',
+            );
           if (
             plan.members.filter(
               (m) => group(m) === group(c) && m.Config.Labels['com.docker.compose.service'] === service,
@@ -566,6 +572,10 @@ export async function prepareMaintenance(input) {
     expiresAt,
     backupPath,
     action: input.action || 'backup',
+    updateScope: plan.updateScope || null,
+    selectionNote: plan.updateScope === 'compose'
+      ? '更新会覆盖所选容器所属的整个 Compose 应用，并统一执行完整备份、拉取与重建'
+      : '',
     backupFirst: true,
     selected: plan.selected.map((c) => ({ id: c.Id, name: name(c) })),
     members: plan.members.map((c) => ({ id: c.Id, name: name(c), running: c.State.Running })),
@@ -590,7 +600,7 @@ export async function prepareMaintenance(input) {
     expiresAt,
     fingerprint: hash(plan.members.map(identity)),
     action: input.action || 'backup',
-    selectedIds: input.containerIds,
+    selectedIds: plan.selected.map((c) => c.Id),
   });
   return publicPlan;
 }
@@ -620,6 +630,7 @@ export async function executeMaintenance({ token, confirmed, keySaved, makeDefau
       workerId: null,
       status: 'running',
       action: prepared.action,
+      updateScope: prepared.publicPlan.updateScope,
       stage: '准备完整备份',
       createdAt: new Date().toISOString(),
       backupPath: config.backupPath,
@@ -868,13 +879,7 @@ async function runPreparedUpdate(task) {
             )
               throw fault('Compose 更新步骤失败，已保留完整备份，请检查应用');
           };
-          const stopped = mine
-            .filter((c) => !c.State.Running)
-            .map((c) => c.Config.Labels['com.docker.compose.service']);
-          await run(['pull', ...services]);
-          const running = services.filter((s) => !stopped.includes(s));
-          if (running.length) await run(['up', '-d', '--no-deps', ...running]);
-          if (stopped.length) await run(['up', '--no-start', '--no-deps', '--force-recreate', ...stopped]);
+          const { stopped } = await recreateComposeServices(mine, run);
           let healthy = false;
           for (let attempt = 0; attempt < 90; attempt++) {
             const current = await docker.listContainers({ all: true }),
@@ -918,6 +923,17 @@ async function runPreparedUpdate(task) {
       );
     });
   }
+}
+
+export async function recreateComposeServices(containers, run) {
+  const service = (c) => c.Config.Labels['com.docker.compose.service'];
+  const services = [...new Set(containers.map(service))];
+  const stopped = containers.filter((c) => !c.State.Running).map(service);
+  const running = services.filter((s) => !stopped.includes(s));
+  await run(['pull', ...services]);
+  if (running.length) await run(['up', '-d', '--no-deps', '--force-recreate', ...running]);
+  if (stopped.length) await run(['up', '--no-start', '--no-deps', '--force-recreate', ...stopped]);
+  return { services, stopped };
 }
 
 export function publicTargets() {

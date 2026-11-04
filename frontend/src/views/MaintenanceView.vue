@@ -36,7 +36,7 @@
     <template v-if="plan">
       <div class="flex items-center justify-between gap-3">
         <h2 class="section-title">
-          {{ plan.action === 'update' ? '更新前完整备份确认' : '完整备份确认' }}
+          {{ plan.action === 'update' ? '整个 Compose 更新前确认' : '完整备份确认' }}
         </h2>
         <button class="btn-ghost" :disabled="busy" @click="plan = null">返回列表</button>
       </div>
@@ -71,8 +71,11 @@
       <section class="section-panel space-y-3">
         <h3 class="section-title">完整范围 · {{ plan.members.length }} 个容器</h3>
         <p class="text-sm break-words">{{ plan.members.map((c) => c.name).join('、') }}</p>
-        <p v-if="plan.members.length > plan.selected.length" class="text-sm text-amber-400">
-          已自动纳入同应用关联容器，一起协调停写；更新时只重建所选服务。
+        <p v-if="plan.action === 'update'" class="text-sm text-amber-400">
+          本次更新会覆盖所选容器所属的整个 Compose 应用，并统一执行完整备份、拉取与重建。
+        </p>
+        <p v-else-if="plan.members.length > plan.selected.length" class="text-sm text-amber-400">
+          已自动纳入同应用关联容器，一起协调停写。
         </p>
         <ul class="space-y-2 text-sm">
           <li>部署配置、全部 env / secret 引用及构建资料</li>
@@ -134,7 +137,7 @@
         >
         <button class="btn-primary" :disabled="!canExecute" @click="execute">
           <Archive class="h-4 w-4" />{{
-            busy ? '提交中…' : plan.action === 'update' ? '完整备份后更新' : '开始完整备份'
+            busy ? '提交中…' : plan.action === 'update' ? '完整备份后更新整个 Compose' : '开始完整备份'
           }}
         </button>
       </section>
@@ -210,9 +213,9 @@
               ><button
                 class="btn-primary"
                 :disabled="busy || !selected.length"
-                @click="prepare('update', selected)"
+                @click="prepare('update', updateIds(selected))"
               >
-                更新所选
+                更新所选应用
               </button>
             </div>
           </div>
@@ -303,7 +306,7 @@
                         class="btn-secondary"
                         :disabled="busy || !!operationReason(container)"
                         :title="operationReason(container)"
-                        @click="prepare('update', [container.id])"
+                        @click="prepare('update', updateIds([container.id]))"
                       >
                         更新</button
                       ><button
@@ -324,9 +327,7 @@
             </p>
           </div>
           <p class="text-xs text-muted">
-            完整备份自动覆盖同 Compose
-            应用。面板自身、临时辅助容器或无法完整保存的数据会在预检中明确阻止；独立容器需先有
-            Compose 定义才能更新。
+            更新和完整备份均覆盖整个 Compose 应用；更新后保留原启停状态并检查健康。面板自身、临时辅助容器或无法完整保存的数据会在预检中明确阻止；独立容器需先有 Compose 定义才能更新。
           </p>
         </template>
 
@@ -849,6 +850,20 @@ function tabKeydown(event) {
 function invalidatePlan() {
   planStale.value = true;
   confirmed.value = false;
+}
+function updateIds(ids) {
+  const projectIds = new Set(
+    data.value.containers
+      .filter((container) => ids.includes(container.id) && container.projectId)
+      .map((container) => container.projectId)
+  );
+  return data.value.containers
+    .filter(
+      (container) =>
+        !container.helper &&
+        ((container.projectId && projectIds.has(container.projectId)) || ids.includes(container.id))
+    )
+    .map((container) => container.id);
 }
 function prepare(action, ids) {
   return perform(async (valid) => {

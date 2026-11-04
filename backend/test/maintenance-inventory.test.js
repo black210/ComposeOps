@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 const temp = await mkdtemp(path.join(os.tmpdir(), 'maintenance-scope-'));
 process.env.DB_PATH = path.join(temp, 'test.db');
 process.env.MAINTENANCE_DATA_DIR = path.join(temp, 'maintenance');
-const { inventoryForBackup, saveSyncTarget, publicTargets } = await import(
+const { inventoryForBackup, recreateComposeServices, saveSyncTarget, publicTargets } = await import(
   '../src/services/container-maintenance.js'
 );
 const container = (id, app, mounts = []) => ({
@@ -45,6 +45,41 @@ test('共享写入、未纳管、面板自身和临时辅助容器不能伪装�
   assert.match(inventoryForBackup([a], ['web'], { ...opts, selfId: 'web' }).blockers.join(), /面板自身/);
   a.Config.Labels['composeops.helper'] = 'workspace';
   assert.match(inventoryForBackup([a], ['web'], opts).blockers.join(), /辅助容器/);
+});
+test('更新扩展至相同项目和目录的全部服务，备份保留原选择，缺失选择仍阻止', () => {
+  const all = [container('web', 'app'), container('db', 'app'), container('other', 'other'), container('solo')];
+  const anotherDirectory = container('same-name-elsewhere', 'app');
+  anotherDirectory.Config.Labels['com.docker.compose.project.working_dir'] = '/apps/another';
+  all.push(anotherDirectory);
+  const update = inventoryForBackup(all, ['web'], { ...opts, action: 'update' });
+  assert.deepEqual(update.selected.map((c) => c.Id), ['web', 'db']);
+  assert.deepEqual(update.members.map((c) => c.Id), ['web', 'db']);
+  assert.equal(update.updateScope, 'compose');
+  assert.deepEqual(inventoryForBackup(all, ['web'], opts).selected.map((c) => c.Id), ['web']);
+  assert.match(inventoryForBackup(all, ['web', 'missing'], { ...opts, action: 'update' }).blockers.join(), /已不存在/);
+  assert.deepEqual(inventoryForBackup(all, ['solo'], { ...opts, action: 'update' }).selected.map((c) => c.Id), ['solo']);
+});
+test('整个 Compose 一起拉取并重建，原停止服务重建但不启动，拉取失败不重建', async () => {
+  const all = ['web', 'db', 'scheduler'].map((id) => {
+    const c = container(id, 'app');
+    c.Config.Labels['com.docker.compose.service'] = id;
+    c.State.Running = id !== 'scheduler';
+    return c;
+  });
+  const calls = [];
+  const { stopped } = await recreateComposeServices(all, async (args) => calls.push(args));
+  assert.deepEqual(calls, [
+    ['pull', 'web', 'db', 'scheduler'],
+    ['up', '-d', '--no-deps', '--force-recreate', 'web', 'db'],
+    ['up', '--no-start', '--no-deps', '--force-recreate', 'scheduler'],
+  ]);
+  assert.deepEqual(stopped, ['scheduler']);
+  const failed = [];
+  await assert.rejects(recreateComposeServices(all, async (args) => {
+    failed.push(args);
+    throw new Error('仓库不可达');
+  }), /仓库不可达/);
+  assert.deepEqual(failed, [['pull', 'web', 'db', 'scheduler']]);
 });
 test('认证信息不会出现在目标列表，配置修改必须重新测试', () => {
   const target = saveSyncTarget({

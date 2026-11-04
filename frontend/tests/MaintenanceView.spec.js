@@ -80,6 +80,38 @@ async function show() {
 }
 const button = (text) => wrapper.findAll('button').find((b) => b.text() === text);
 describe('完整备份界面的真实确认条件', () => {
+  it('单容器更新覆盖同应用全部容器并明确整体确认，备份请求保留原选择', async () => {
+    const dbId = 'b'.repeat(64);
+    client.getMaintenance.mockResolvedValue({
+      ...overview(),
+      containers: [
+        { ...overview().containers[0], projectId: 'app' },
+        { id: dbId, name: 'app-db', projectId: 'app', state: 'exited' },
+        { id: 'other', name: 'other-web', projectId: 'other' },
+        { id: 'helper', name: 'runner', projectId: 'app', helper: true },
+      ],
+    });
+    client.prepareMaintenance.mockResolvedValueOnce({
+      ...backupPlan(), action: 'update', updateScope: 'compose',
+      selected: [{ id, name: 'app-web' }, { id: dbId, name: 'app-db' }],
+    });
+    await show();
+    await button('更新').trigger('click');
+    await flushPromises();
+    expect(client.prepareMaintenance).toHaveBeenLastCalledWith({
+      action: 'update', containerIds: [id, dbId], backupPath: '/backups/apps',
+    });
+    expect(wrapper.text()).toContain('整个 Compose 更新前确认');
+    expect(wrapper.text()).toContain('统一执行完整备份、拉取与重建');
+    expect(button('完整备份后更新整个 Compose').element.disabled).toBe(true);
+    expect(wrapper.text()).not.toContain('只重建所选服务');
+    await button('返回列表').trigger('click');
+    await button('备份').trigger('click');
+    await flushPromises();
+    expect(client.prepareMaintenance).toHaveBeenLastCalledWith({
+      action: 'backup', containerIds: [id], backupPath: '/backups/apps',
+    });
+  });
   it('代理测试不会保存地址，保存后才强制重新检查', async () => {
     client.getMaintenance.mockResolvedValue({
       ...overview(),

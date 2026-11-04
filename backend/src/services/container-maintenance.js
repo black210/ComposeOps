@@ -356,7 +356,13 @@ export async function prepareMaintenance(input) {
   if (r.dockerRoot && (within(r.dockerRoot, backupPath) || within(backupPath, r.dockerRoot)))
     throw fault('备份目录不能位于 Docker 内部数据目录或其父目录');
   const projects = await scanProjects();
-  await closeIdleProjectRunners(projects.map((p) => p.id));
+  const before = await docker.listContainers({ all: true });
+  const selectedProjects = projects.filter((p) => before.some((c) =>
+    input.containerIds.includes(c.Id) &&
+    c.Labels?.['com.docker.compose.project'] === p.projectName &&
+    c.Labels?.['com.docker.compose.project.working_dir'] === p.workingDir,
+  ));
+  await closeIdleProjectRunners(selectedProjects.map((p) => p.id), { waitMs: 35_000 });
   const raw = await docker.listContainers({ all: true, size: true });
   const all = [];
   for (const c of raw) all.push(await docker.getContainer(c.Id).inspect());
@@ -470,7 +476,7 @@ export async function prepareMaintenance(input) {
       plan.blockers.push(p.projectName + ' 的最终 Compose 配置无法解析；不能确认变量、外部文件和依赖范围');
     }
   }
-  await closeIdleProjectRunners(models.map((p) => p.id));
+  await closeIdleProjectRunners(models.map((p) => p.id), { waitMs: 35_000 });
   plan.sources = plan.declared
     .filter(
       (s) =>

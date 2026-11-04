@@ -32,6 +32,9 @@
     <p v-if="error" class="alert-error break-words" role="alert">{{ error }}</p>
     <p v-if="notice" class="text-sm text-accent" role="status" aria-live="polite">{{ notice }}</p>
     <p v-if="loading" class="sr-only" role="status">正在加载运维信息</p>
+    <p v-if="preparing" class="text-sm text-muted" role="status" aria-live="polite">
+      正在预检完整范围；已暂停本页镜像检查，等待所选应用工作区空闲…
+    </p>
 
     <template v-if="plan">
       <div class="flex items-center justify-between gap-3">
@@ -726,6 +729,7 @@ const plan = ref(null),
   makeDefault = ref(false),
   planStale = ref(false);
 const busy = ref(false),
+  preparing = ref(false),
   loading = ref(false),
   error = ref(''),
   notice = ref(''),
@@ -866,17 +870,24 @@ function updateIds(ids) {
     .map((container) => container.id);
 }
 function prepare(action, ids) {
+  if (busy.value) return;
+  stopUpdateChecks();
   return perform(async (valid) => {
-    const result = await api.prepareMaintenance({
-      action,
-      containerIds: [...ids],
-      backupPath: backupPath.value,
-    });
-    if (!valid()) return;
-    plan.value = result;
-    planStale.value = false;
-    confirmed.value = false;
-    makeDefault.value = false;
+    preparing.value = true;
+    try {
+      const result = await api.prepareMaintenance({
+        action,
+        containerIds: [...ids],
+        backupPath: backupPath.value,
+      });
+      if (!valid()) return;
+      plan.value = result;
+      planStale.value = false;
+      confirmed.value = false;
+      makeDefault.value = false;
+    } finally {
+      if (valid()) preparing.value = false;
+    }
   });
 }
 function execute() {
@@ -1197,6 +1208,7 @@ function recover() {
   });
 }
 function hostChanged() {
+  preparing.value = false;
   stopUpdateChecks();
   checksStarted = false;
   epoch++;

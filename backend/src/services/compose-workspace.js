@@ -241,11 +241,19 @@ export async function closeAllWorkspaceRunners() {
 }
 
 /** 完整备份前只回收所选项目的空闲工作容器，不能强杀正在执行的命令。 */
-export async function closeIdleProjectRunners(projectIds) {
-  const entries=[...workspaceRunners.values()].filter(e=>projectIds.includes(e.projectId));
-  if(entries.some(e=>e.active>0))throw Object.assign(new Error('所选应用有正在执行的工作区命令，请等待完成'),{statusCode:409});
-  for(const entry of entries)retireRunner(entry);
-  await Promise.all(entries.map(entry=>destroyRunner(entry)));
+export async function closeIdleProjectRunners(projectIds, { waitMs = 0 } = {}) {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const entries = [...workspaceRunners.values()].filter((entry) => projectIds.includes(entry.projectId));
+    if (!entries.some((entry) => entry.active > 0)) {
+      for (const entry of entries) retireRunner(entry);
+      await Promise.all(entries.map((entry) => destroyRunner(entry)));
+      return;
+    }
+    if (Date.now() >= deadline)
+      throw Object.assign(new Error('所选应用有正在执行的工作区命令，请等待完成'), { statusCode: 409 });
+    await new Promise((resolve) => setTimeout(resolve, Math.min(100, deadline - Date.now())));
+  }
 }
 
 export function workspaceRunnerStats() {

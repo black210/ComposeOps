@@ -80,6 +80,28 @@ async function show() {
 }
 const button = (text) => wrapper.findAll('button').find((b) => b.text() === text);
 describe('完整备份界面的真实确认条件', () => {
+  it('发起运维会中止镜像检查并显示预检等待状态，避免争用工作区', async () => {
+    client.getMaintenance.mockResolvedValue({
+      ...overview(),
+      containers: [{ ...overview().containers[0], projectId: 'p', service: 'web', updateCheckAvailable: true }],
+    });
+    let signal, resolvePlan;
+    client.getProjectUpdates.mockImplementation((_id, _force, options) => {
+      signal = options.signal;
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+    });
+    client.prepareMaintenance.mockImplementation(() => new Promise((resolve) => { resolvePlan = resolve; }));
+    await show();
+    expect(signal.aborted).toBe(false);
+    await button('备份').trigger('click');
+    expect(signal.aborted).toBe(true);
+    expect(wrapper.text()).toContain('正在预检完整范围');
+    expect(button('备份').element.disabled).toBe(true);
+    resolvePlan(backupPlan());
+    await flushPromises();
+    expect(wrapper.text()).not.toContain('正在预检完整范围');
+    expect(button('开始完整备份')).toBeDefined();
+  });
   it('单容器更新覆盖同应用全部容器并明确整体确认，备份请求保留原选择', async () => {
     const dbId = 'b'.repeat(64);
     client.getMaintenance.mockResolvedValue({

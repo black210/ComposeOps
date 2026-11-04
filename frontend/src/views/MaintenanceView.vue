@@ -9,11 +9,15 @@
         <button
           v-if="!plan && tab === 'containers'"
           class="btn-secondary"
-          :disabled="busy || loading"
-          @click="checkUpdates"
+          :disabled="loading"
+          @click="checkingUpdates ? stopUpdateChecks() : checkUpdates(true)"
         >
-          检查镜像更新</button
-        ><button class="btn-secondary" :disabled="loading || busy" @click="load()">
+          <RefreshCw
+            v-if="checkingUpdates"
+            class="h-4 w-4 animate-spin motion-reduce:animate-none"
+          />
+          {{ checkingUpdates ? '停止检查' : '重新检查镜像' }}</button
+        ><button class="btn-secondary" :disabled="loading || busy" @click="refresh">
           <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />刷新
         </button>
       </div>
@@ -24,7 +28,9 @@
 
     <template v-if="plan">
       <div class="flex items-center justify-between gap-3">
-        <h2 class="section-title">{{ plan.action === 'update' ? '更新前完整备份确认' : '完整备份确认' }}</h2>
+        <h2 class="section-title">
+          {{ plan.action === 'update' ? '更新前完整备份确认' : '完整备份确认' }}
+        </h2>
         <button class="btn-ghost" :disabled="busy" @click="plan = null">返回列表</button>
       </div>
       <section class="section-panel space-y-4">
@@ -156,7 +162,23 @@
               class="input w-full sm:w-72"
               placeholder="搜索容器、应用或镜像"
               aria-label="搜索容器、应用或镜像"
-            /><span class="text-xs text-muted">当前节点 · {{ data.containers.length }} 个容器</span>
+            />
+            <div class="flex flex-wrap items-center gap-4 text-xs text-muted">
+              <span>当前节点 · {{ data.containers.filter((c) => !c.helper).length }} 个容器</span>
+              <label v-if="helperCount" class="flex items-center gap-2 cursor-pointer">
+                <input v-model="showHelpers" type="checkbox" />显示辅助容器（{{ helperCount }}）
+              </label>
+            </div>
+          </div>
+          <div class="maintenance-check-summary" role="status" aria-live="polite">
+            <span v-if="checkingUpdates" class="flex items-center gap-2">
+              <RefreshCw class="h-4 w-4 animate-spin motion-reduce:animate-none" />
+              正在检查镜像 · 已完成 {{ updateProgress.done }} / {{ updateProgress.total }} 个应用
+            </span>
+            <span v-else>{{ checkSummary }}</span>
+            <span class="text-xs text-muted"
+              >自动读取最近结果，逐项显示；只检查，不拉取或重建容器</span
+            >
           </div>
           <div class="section-panel flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-4">
@@ -164,9 +186,10 @@
                 ><input
                   type="checkbox"
                   :checked="allSelected"
-                  :indeterminate.prop="selected.length > 0 && !allSelected"
-                  @change="selected = $event.target.checked ? data.containers.map((c) => c.id) : []"
-                />选择全部容器</label
+                  :indeterminate.prop="someSelected && !allSelected"
+                  :disabled="!selectable.length"
+                  @change="toggleSelection($event.target.checked)"
+                />选择当前列表</label
               ><span class="text-xs text-muted">已选 {{ selected.length }} 个</span>
             </div>
             <div class="flex flex-wrap gap-2">
@@ -185,8 +208,20 @@
               </button>
             </div>
           </div>
-          <div class="table-wrap">
-            <table class="data-table">
+          <div
+            class="table-wrap maintenance-table-wrap"
+            tabindex="0"
+            aria-label="容器运维列表，窄屏可横向滚动"
+          >
+            <table class="data-table maintenance-table">
+              <colgroup>
+                <col class="maintenance-col-check" />
+                <col />
+                <col class="maintenance-col-project" />
+                <col class="maintenance-col-state" />
+                <col class="maintenance-col-update" />
+                <col class="maintenance-col-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th><span class="sr-only">选择</span></th>
@@ -205,32 +240,59 @@
                       type="checkbox"
                       :value="container.id"
                       :aria-label="'选择 ' + container.name"
+                      :disabled="!!operationReason(container)"
+                      :title="operationReason(container)"
                     />
                   </td>
                   <td>
                     <p class="font-medium text-surface-100 break-words">{{ container.name }}</p>
                     <p class="text-xs text-muted break-all">{{ container.image }}</p>
-                  </td>
-                  <td>{{ container.projectName || (container.helper ? '辅助容器' : '独立容器') }}</td>
-                  <td>{{ stateLabel(container.state) }}</td>
-                  <td>
-                    <span
-                      class="text-xs"
-                      :class="updates[container.id]?.hasUpdate ? 'text-amber-400' : 'text-muted'"
-                      >{{ updateLabel(updates[container.id]) }}</span
-                    >
+                    <span v-if="container.helper || container.self" class="text-xs text-muted">{{
+                      container.helper ? '面板临时辅助容器' : '当前运维面板'
+                    }}</span>
                   </td>
                   <td>
-                    <div class="flex gap-3">
+                    {{ container.projectName || (container.helper ? '辅助容器' : '独立容器') }}
+                  </td>
+                  <td>
+                    <span class="maintenance-state">{{ stateLabel(container.state) }}</span>
+                  </td>
+                  <td>
+                    <div class="maintenance-update-cell">
+                      <span
+                        class="maintenance-update-label"
+                        :class="updates[container.id]?.hasUpdate ? 'text-amber-400' : 'text-muted'"
+                      >
+                        {{ updateLabel(container) }}
+                      </span>
+                      <span
+                        v-if="updateDetail(container)"
+                        class="maintenance-update-detail text-muted"
+                        :title="updateDetail(container)"
+                        >{{ updateDetail(container) }}</span
+                      >
                       <button
-                        class="text-sm text-accent"
-                        :disabled="busy"
+                        v-if="updates[container.id]?.status === 'failed' && !checkingUpdates"
+                        class="text-xs text-accent maintenance-retry"
+                        @click="checkUpdates(true, container.projectId)"
+                      >
+                        重试
+                      </button>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="maintenance-row-actions">
+                      <button
+                        class="btn-secondary"
+                        :disabled="busy || !!operationReason(container)"
+                        :title="operationReason(container)"
                         @click="prepare('update', [container.id])"
                       >
                         更新</button
                       ><button
-                        class="text-sm text-accent"
-                        :disabled="busy"
+                        class="btn-secondary"
+                        :disabled="busy || !!operationReason(container)"
+                        :title="operationReason(container)"
                         @click="prepare('backup', [container.id])"
                       >
                         备份
@@ -240,12 +302,14 @@
                 </tr>
               </tbody>
             </table>
-            <p v-if="!filtered.length && !loading" class="p-6 text-center text-sm text-muted">没有匹配容器</p>
+            <p v-if="!filtered.length && !loading" class="p-6 text-center text-sm text-muted">
+              没有匹配容器
+            </p>
           </div>
           <p class="text-xs text-muted">
             完整备份自动覆盖同 Compose
-            应用。面板自身、临时辅助容器或无法完整保存的数据会在预检中明确阻止；独立容器需先有 Compose
-            定义才能更新。
+            应用。面板自身、临时辅助容器或无法完整保存的数据会在预检中明确阻止；独立容器需先有
+            Compose 定义才能更新。
           </p>
         </template>
 
@@ -315,7 +379,8 @@
                 <p class="mt-1 text-xs text-muted break-all">{{ target.remotePath }}</p>
               </div>
               <div class="flex flex-wrap gap-2">
-                <button class="btn-secondary" :disabled="busy" @click="editTarget(target)">编辑</button
+                <button class="btn-secondary" :disabled="busy" @click="editTarget(target)">
+                  编辑</button
                 ><button
                   class="btn-secondary"
                   :disabled="busy || !target.authorized"
@@ -365,10 +430,14 @@
         </template>
 
         <template v-if="tab === 'tasks'">
-          <p class="text-xs text-muted">原“运维任务”已合并。统一查看更新、完整备份、同步及失败记录。</p>
+          <p class="text-xs text-muted">
+            原“运维任务”已合并。统一查看更新、完整备份、同步及失败记录。
+          </p>
           <section v-for="task in data.tasks" :key="task.id" class="section-panel space-y-2">
             <div class="flex flex-wrap justify-between gap-2">
-              <h3 class="section-title">{{ actionLabel(task.action) }} · {{ task.names.join('、') }}</h3>
+              <h3 class="section-title">
+                {{ actionLabel(task.action) }} · {{ task.names.join('、') }}
+              </h3>
               <span
                 class="status-badge"
                 :class="
@@ -385,7 +454,9 @@
             <p class="text-xs text-muted">{{ time(task.createdAt) }}</p>
             <p v-if="task.backupPath" class="break-all text-xs text-muted">{{ task.backupPath }}</p>
             <button
-              v-if="['failed', 'interrupted'].includes(task.status) && task.originallyRunning?.length"
+              v-if="
+                ['failed', 'interrupted'].includes(task.status) && task.originallyRunning?.length
+              "
               class="btn-secondary"
               :disabled="busy"
               @click="recoverTarget = task"
@@ -412,7 +483,9 @@
           <p v-if="!data.tasks.length && !loading" class="text-sm text-muted">暂无任务记录。</p>
           <details class="section-panel" @toggle="legacyOpen = $event.target.open">
             <summary class="text-sm text-accent">原定时运维计划、Agent 后台任务与巡检</summary>
-            <p class="mt-3 text-xs text-muted">原定时“数据卷备份”只备份命名卷，不属于本页的完整备份。</p>
+            <p class="mt-3 text-xs text-muted">
+              原定时“数据卷备份”只备份命名卷，不属于本页的完整备份。
+            </p>
             <OperationsCenterView v-if="legacyOpen" embedded />
           </details>
         </template>
@@ -494,7 +567,11 @@
       <div v-if="syncChoice" class="p-4 space-y-4">
         <label class="block text-sm"
           >同步目标<select v-model="syncChoice.targetId" class="input mt-2 w-full">
-            <option v-for="target in targets.filter((t) => t.tested)" :key="target.id" :value="target.id">
+            <option
+              v-for="target in targets.filter((t) => t.tested)"
+              :key="target.id"
+              :value="target.id"
+            >
               {{ target.name }}
             </option>
           </select></label
@@ -547,6 +624,13 @@ const targets = ref([]),
   query = ref(''),
   backupPath = ref('');
 const updates = ref({});
+const showHelpers = ref(false),
+  checkingUpdates = ref(false),
+  updateProgress = ref({ done: 0, total: 0 }),
+  checkSummary = ref('镜像检查将在列表加载后开始');
+const updateControllers = new Set();
+let updateGeneration = 0,
+  checksStarted = false;
 const plan = ref(null),
   confirmed = ref(false),
   keySaved = ref(false),
@@ -567,13 +651,32 @@ let pollTimer,
   epoch = 0,
   disposed = false;
 const filtered = computed(() =>
-  data.value.containers.filter((c) =>
-    (c.name + ' ' + c.image + ' ' + c.projectName).toLowerCase().includes(query.value.toLowerCase())
+  data.value.containers.filter(
+    (c) =>
+      (showHelpers.value || !c.helper) &&
+      (c.name + ' ' + c.image + ' ' + c.projectName)
+        .toLowerCase()
+        .includes(query.value.toLowerCase())
   )
 );
+const helperCount = computed(() => data.value.containers.filter((c) => c.helper).length);
+const operationReason = (container) =>
+  container.helper
+    ? '临时辅助容器由面板管理，不参与业务备份和更新'
+    : container.self
+      ? '当前面板不能在自身内部完成停机备份或更新'
+      : '';
+const selectable = computed(() => filtered.value.filter((c) => !operationReason(c)));
 const allSelected = computed(
-  () => !!data.value.containers.length && selected.value.length === data.value.containers.length
+  () => !!selectable.value.length && selectable.value.every((c) => selected.value.includes(c.id))
 );
+const someSelected = computed(() => selectable.value.some((c) => selected.value.includes(c.id)));
+function toggleSelection(checked) {
+  const ids = selectable.value.map((c) => c.id);
+  selected.value = checked
+    ? [...new Set([...selected.value, ...ids])]
+    : selected.value.filter((id) => !ids.includes(id));
+}
 const canExecute = computed(
   () =>
     !!plan.value &&
@@ -592,6 +695,13 @@ async function load(quiet = false) {
     const [overview, result] = await Promise.all([api.getMaintenance(), api.getSyncTargets()]);
     if (current !== epoch || disposed) return;
     data.value = overview;
+    selected.value = selected.value.filter((id) =>
+      overview.containers.some((c) => c.id === id && !operationReason(c))
+    );
+    for (const id of Object.keys(updates.value)) {
+      const container = overview.containers.find((c) => c.id === id);
+      if (!container || updates.value[id].imageRef !== container.image) delete updates.value[id];
+    }
     targets.value = result.targets;
     if (!backupPath.value) backupPath.value = overview.settings.backupPath || '';
     if (!quiet) error.value = '';
@@ -619,6 +729,10 @@ function setTab(value) {
   tab.value = value;
   router.replace({ query: { ...route.query, tab: value } });
 }
+watch(tab, (value) => {
+  if (value === 'containers' && !checksStarted && data.value.containers.length)
+    void checkUpdates(false);
+});
 watch(
   () => route.query.tab,
   (value) => {
@@ -687,27 +801,107 @@ function savePath() {
     }
   });
 }
-function checkUpdates() {
-  return perform(async (valid) => {
-    const result = await api.checkAllUpdates();
-    if (!valid()) return;
-    const checked = {};
-    for (const c of data.value.containers) {
-      const project = result.projects.find((p) => p.projectId === c.projectId);
-      checked[c.id] = project?.images.find((i) => i.service === c.service) || {
-        status: project?.error ? 'failed' : 'unsupported',
-      };
-    }
-    updates.value = checked;
-    notice.value = '镜像检查完成；只检查，不执行拉取或重建。';
-  });
+async function refresh() {
+  await load();
+  if (!disposed && tab.value === 'containers' && !checkingUpdates.value) void checkUpdates(false);
 }
-function updateLabel(item) {
-  if (!item) return '待检查';
+function stopUpdateChecks() {
+  updateGeneration++;
+  for (const controller of updateControllers) controller.abort();
+  updateControllers.clear();
+  checkingUpdates.value = false;
+  for (const item of Object.values(updates.value)) {
+    if (item.status === 'checking' || item.status === 'queued') item.status = 'cancelled';
+  }
+  checkSummary.value = '检查已停止，已完成的结果保留；可重新检查';
+}
+async function checkUpdates(force = false, projectId = null) {
+  if (checkingUpdates.value || disposed) return;
+  checksStarted = true;
+  const current = ++updateGeneration,
+    currentEpoch = epoch;
+  const valid = () => !disposed && current === updateGeneration && currentEpoch === epoch;
+  const members = data.value.containers.filter(
+    (c) =>
+      !c.helper &&
+      c.projectId &&
+      c.updateCheckAvailable !== false &&
+      (!projectId || c.projectId === projectId)
+  );
+  const queue = [...new Set(members.map((c) => c.projectId))];
+  updateProgress.value = { done: 0, total: queue.length };
+  if (!queue.length) {
+    checkSummary.value = '没有可检查的应用，请查看各行的配置或授权提示';
+    return;
+  }
+  checkingUpdates.value = true;
+  for (const c of members) updates.value[c.id] = { status: 'queued', imageRef: c.image };
+  async function worker() {
+    while (valid() && queue.length) {
+      const id = queue.shift(),
+        projectMembers = members.filter((c) => c.projectId === id);
+      const controller = new AbortController();
+      updateControllers.add(controller);
+      const timer = setTimeout(() => controller.abort(), 35_000);
+      const writeResult = (c, item) => {
+        if (
+          valid() &&
+          data.value.containers.some((live) => live.id === c.id && live.image === c.image)
+        )
+          updates.value[c.id] = { ...item, imageRef: c.image };
+      };
+      for (const c of projectMembers) writeResult(c, { status: 'checking' });
+      try {
+        const result = await api.getProjectUpdates(id, force, { signal: controller.signal });
+        for (const c of projectMembers) {
+          const item = result.images?.find((image) => image.service === c.service);
+          writeResult(
+            c,
+            item
+              ? { ...item, checkedAt: result.checkedAt }
+              : {
+                  status: 'unresolved',
+                  reason: result.error || 'Compose 中未找到此容器对应的服务镜像',
+                  checkedAt: result.checkedAt,
+                }
+          );
+        }
+      } catch (error) {
+        for (const c of projectMembers)
+          writeResult(c, {
+            status: 'failed',
+            reason: controller.signal.aborted
+              ? '检查超过 35 秒，请检查镜像仓库连接后重试'
+              : error.message,
+          });
+      } finally {
+        clearTimeout(timer);
+        updateControllers.delete(controller);
+        if (valid()) updateProgress.value.done++;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(3, queue.length) }, () => worker()));
+  if (!valid()) return;
+  checkingUpdates.value = false;
+  const results = members.map((c) => updates.value[c.id]);
+  const failed = results.filter((i) => i?.status === 'failed').length;
+  const available = results.filter((i) => i?.hasUpdate).length;
+  checkSummary.value = `已检查 ${updateProgress.value.done} 个应用 · ${available} 个容器有更新${failed ? ` · ${failed} 个检查失败，可逐项重试` : ''}`;
+}
+function updateLabel(container) {
+  if (container.helper) return '无需检查';
+  if (!container.projectId) return '需 Compose 定义';
+  if (container.updateCheckAvailable === false) return '未满足检查条件';
+  const item = updates.value[container.id];
+  if (!item) return '尚未检查';
   if (item.hasUpdate) return '有镜像更新';
   return (
     {
       current: '已是最新',
+      queued: '排队中',
+      checking: '检查中…',
+      cancelled: '待重新检查',
       up_to_date: '已是最新',
       pinned: '固定镜像',
       local_build: '本地构建',
@@ -720,10 +914,31 @@ function updateLabel(item) {
     }[item.status] || '无法比较'
   );
 }
+function updateDetail(container) {
+  if (container.helper) return '面板临时工作容器';
+  if (!container.projectId || container.updateCheckAvailable === false)
+    return container.updateCheckReason || '请先纳管应用并授权 Compose 目录';
+  const item = updates.value[container.id];
+  if (item?.status === 'checking') return '正在读取配置或访问镜像仓库，单个应用最长 35 秒';
+  if (item?.status === 'queued') return '等待前面的应用检查完成';
+  return (
+    item?.error ||
+    item?.reason ||
+    (item?.checkedAt ? '检查于 ' + time(item.checkedAt) : '进入页面后自动检查')
+  );
+}
 function editTarget(target = null) {
   draft.value = target
     ? { ...target, password: '' }
-    : { type: '115', name: '', remotePath: '/ComposeOps', clientId: '', url: '', user: '', password: '' };
+    : {
+        type: '115',
+        name: '',
+        remotePath: '/ComposeOps',
+        clientId: '',
+        url: '',
+        user: '',
+        password: '',
+      };
 }
 function saveTarget() {
   return perform(async (valid) => {
@@ -813,7 +1028,8 @@ async function pollAuth() {
     authMessage.value = result.status === 'scanned' ? '已扫码，等待 115 App 确认' : '等待扫码';
     authTimer = setTimeout(pollAuth, 2500);
   } catch (e) {
-    if (current === epoch && !disposed) authMessage.value = '授权状态读取失败，请关闭后重试：' + e.message;
+    if (current === epoch && !disposed)
+      authMessage.value = '授权状态读取失败，请关闭后重试：' + e.message;
   }
 }
 function recover() {
@@ -826,6 +1042,8 @@ function recover() {
   });
 }
 function hostChanged() {
+  stopUpdateChecks();
+  checksStarted = false;
   epoch++;
   loading.value = false;
   busy.value = false;
@@ -837,7 +1055,9 @@ function hostChanged() {
   draft.value = null;
   syncChoice.value = null;
   stopAuth();
-  void load();
+  void load().then(() => {
+    if (tab.value === 'containers') void checkUpdates(false);
+  });
 }
 function bytes(n) {
   if (!n) return '—';
@@ -850,28 +1070,39 @@ function time(value) {
 }
 function stateLabel(state) {
   return (
-    { running: '运行中', exited: '已停止', paused: '已暂停', restarting: '重启中', created: '未启动' }[
-      state
-    ] || state
+    {
+      running: '运行中',
+      exited: '已停止',
+      paused: '已暂停',
+      restarting: '重启中',
+      created: '未启动',
+    }[state] || state
   );
 }
 function taskLabel(state) {
-  return { running: '执行中', success: '已完成', failed: '失败', interrupted: '中断待核对' }[state] || state;
+  return (
+    { running: '执行中', success: '已完成', failed: '失败', interrupted: '中断待核对' }[state] ||
+    state
+  );
 }
 function actionLabel(action) {
   return (
-    { backup: '完整备份', update: '备份并更新', sync: '远端同步', recovery: '恢复原运行状态' }[action] ||
-    action
+    { backup: '完整备份', update: '备份并更新', sync: '远端同步', recovery: '恢复原运行状态' }[
+      action
+    ] || action
   );
 }
 onMounted(() => {
-  void load();
+  void load().then(() => {
+    if (tab.value === 'containers') void checkUpdates(false);
+  });
   window.addEventListener('composeops:host-changed', hostChanged);
   pollTimer = setInterval(() => {
     void load(true);
   }, 5000);
 });
 onBeforeUnmount(() => {
+  stopUpdateChecks();
   disposed = true;
   epoch++;
   clearInterval(pollTimer);
@@ -879,3 +1110,82 @@ onBeforeUnmount(() => {
   window.removeEventListener('composeops:host-changed', hostChanged);
 });
 </script>
+
+<style scoped>
+.maintenance-check-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 20px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+.maintenance-table-wrap {
+  min-width: 0;
+}
+.maintenance-table {
+  table-layout: fixed;
+  min-width: 960px;
+}
+.maintenance-col-check {
+  width: 48px;
+}
+.maintenance-col-project {
+  width: 150px;
+}
+.maintenance-col-state {
+  width: 92px;
+}
+.maintenance-col-update {
+  width: 210px;
+}
+.maintenance-col-actions {
+  width: 180px;
+}
+.maintenance-table th {
+  white-space: nowrap;
+}
+.maintenance-table td {
+  font-family: inherit;
+}
+.maintenance-table td:nth-child(2) {
+  overflow-wrap: anywhere;
+}
+.maintenance-table td:nth-child(2) p {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.maintenance-state,
+.maintenance-update-label {
+  white-space: nowrap;
+}
+.maintenance-update-cell {
+  display: grid;
+  gap: 4px;
+}
+.maintenance-update-detail {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.maintenance-retry {
+  justify-self: start;
+  min-height: 28px;
+  white-space: nowrap;
+}
+.maintenance-row-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+}
+.maintenance-row-actions button {
+  flex: none;
+  min-width: 62px;
+  min-height: 36px;
+  white-space: nowrap;
+}
+</style>

@@ -15,6 +15,7 @@ const client = vi.hoisted(() =>
       'authorize115',
       'pollAuthorize115',
       'recoverMaintenanceTask',
+      'getProjectUpdates',
     ].map((k) => [k, vi.fn()])
   )
 );
@@ -77,6 +78,109 @@ async function show() {
 }
 const button = (text) => wrapper.findAll('button').find((b) => b.text() === text);
 describe('完整备份界面的真实确认条件', () => {
+  it('自动逐应用检查，快结果先显示，失败给出原因且不锁定备份操作', async () => {
+    const containers = ['a', 'b'].map((key) => ({
+      id: key.repeat(64),
+      name: key + '-web',
+      image: key + ':latest',
+      projectName: key,
+      projectId: key,
+      service: 'web',
+      state: 'running',
+      updateCheckAvailable: true,
+    }));
+    client.getMaintenance.mockResolvedValue({ ...overview(), containers });
+    let finishSlow;
+    client.getProjectUpdates.mockImplementation((projectId) =>
+      projectId === 'a'
+        ? Promise.resolve({
+            checkedAt: 123,
+            images: [{ service: 'web', status: 'current', hasUpdate: false }],
+          })
+        : new Promise((resolve, reject) => {
+            finishSlow = { resolve, reject };
+          })
+    );
+    await show();
+    expect(client.getProjectUpdates).toHaveBeenCalledTimes(2);
+    expect(wrapper.text()).toContain('已是最新');
+    expect(wrapper.text()).toContain('检查中…');
+    expect(wrapper.text()).toContain('已完成 1 / 2');
+    expect(button('备份').element.disabled).toBe(false);
+    finishSlow.reject(new Error('镜像仓库连接超时'));
+    await flushPromises();
+    expect(wrapper.text()).toContain('检查失败');
+    expect(wrapper.text()).toContain('镜像仓库连接超时');
+    expect(wrapper.text()).toContain('已检查 2 个应用');
+    expect(button('重试')).toBeDefined();
+    expect(wrapper.text()).not.toContain('待检查');
+  });
+  it('隐藏辅助容器，当前筛选全选排除面板自身和辅助容器', async () => {
+    client.getMaintenance.mockResolvedValue({
+      ...overview(),
+      containers: [
+        ...overview().containers,
+        { id: 'h', name: 'random-helper', image: 'panel', helper: true, state: 'running' },
+        { id: 's', name: 'panel', image: 'panel', self: true, state: 'running' },
+      ],
+    });
+    await show();
+    expect(wrapper.text()).not.toContain('random-helper');
+    await wrapper.get('input[aria-label="搜索容器、应用或镜像"]').setValue('app-web');
+    const select = wrapper
+      .findAll('label')
+      .find((label) => label.text() === '选择当前列表')
+      .get('input');
+    await select.setValue(true);
+    expect(wrapper.text()).toContain('已选 1 个');
+    await button('备份所选').trigger('click');
+    await flushPromises();
+    expect(client.prepareMaintenance).toHaveBeenLastCalledWith(
+      expect.objectContaining({ containerIds: [id] })
+    );
+  });
+  it('35 秒超时会中止请求并结束检查，切节点后迟到结果不能覆盖新节点', async () => {
+    vi.useFakeTimers();
+    try {
+      const containers = [
+        { ...overview().containers[0], projectId: 'p', service: 'web', updateCheckAvailable: true },
+      ];
+      client.getMaintenance.mockResolvedValue({ ...overview(), containers });
+      let requestSignal, late;
+      client.getProjectUpdates.mockImplementationOnce(
+        (_id, _force, { signal }) =>
+          new Promise((_resolve, reject) => {
+            requestSignal = signal;
+            signal.addEventListener(
+              'abort',
+              () => reject(new DOMException('timeout', 'AbortError')),
+              { once: true }
+            );
+          })
+      );
+      await show();
+      await vi.advanceTimersByTimeAsync(35_000);
+      await flushPromises();
+      expect(requestSignal.aborted).toBe(true);
+      expect(wrapper.text()).toContain('检查超过 35 秒');
+      client.getProjectUpdates.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            late = resolve;
+          })
+      );
+      await button('重试').trigger('click');
+      client.getMaintenance.mockResolvedValue({ ...overview(), containers: [], hostId: 'remote' });
+      window.dispatchEvent(new Event('composeops:host-changed'));
+      await flushPromises();
+      late({ images: [{ service: 'web', status: 'updated', hasUpdate: true }] });
+      await flushPromises();
+      expect(wrapper.text()).not.toContain('有镜像更新');
+      expect(button('停止检查')).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('已打开运维页时，旧入口及浏览器导航仍切换目标页签并退出旧确认', async () => {
     await show();
     await button('备份').trigger('click');

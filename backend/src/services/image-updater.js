@@ -97,12 +97,12 @@ export function extractImageRefs(composeContent = '') {
 }
 
 /** Docker Hub 匿名 token,供 manifest 拉取。 */
-async function dockerHubToken(repo) {
+async function dockerHubToken(repo, signal) {
   const url = `https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
     if (!response.ok) throw new Error(`registry token ${response.status}`);
     const data = await response.json();
     return data.token;
@@ -112,7 +112,7 @@ async function dockerHubToken(repo) {
 }
 
 /** 拉取远程 manifest 的 digest(HEAD/GET + Docker-Content-Digest 头优先)。 */
-export async function fetchRemoteDigest({ registry, image, tag }) {
+export async function fetchRemoteDigest({ registry, image, tag }, { signal } = {}) {
   const base = registry === 'docker.io' ? 'https://registry-1.docker.io' : `https://${registry}`;
   // Docker Hub official images must retain the library/ namespace in their token scope.
   const repo = image;
@@ -121,9 +121,11 @@ export async function fetchRemoteDigest({ registry, image, tag }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
+    const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    requestSignal.throwIfAborted();
     const headers = { Accept: accept };
-    if (registry === 'docker.io') headers.Authorization = `Bearer ${await dockerHubToken(repo)}`;
-    const response = await fetch(endpoint, { headers, signal: controller.signal, redirect: 'follow' });
+    if (registry === 'docker.io') headers.Authorization = `Bearer ${await dockerHubToken(repo, requestSignal)}`;
+    const response = await fetch(endpoint, { headers, signal: requestSignal, redirect: 'follow' });
     if (!response.ok) throw new Error(`registry ${response.status}`);
     const digest = response.headers.get('docker-content-digest');
     if (digest) return digest;
@@ -190,14 +192,17 @@ async function readProjectComposeContents(project) {
 }
 
 /** 单项目镜像更新检测(带 1h 缓存)。 */
-export async function getProjectUpdates(project, { force = false } = {}) {
+export async function getProjectUpdates(project, { force = false, signal } = {}) {
+  signal?.throwIfAborted();
   const cached = cache.get(project.id);
   if (!force && cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.data;
   const docker = getActivityDocker();
   const services = extractImageServices(await readProjectComposeContents(project));
+  signal?.throwIfAborted();
   const images = [];
   const remoteDigests = new Map();
   for (const service of services) {
+    signal?.throwIfAborted();
     const item = { service: service.service, image: service.image || '', status: service.status, hasUpdate: false, localDigest: null, remoteDigest: null, reachable: false, reason: service.reason || '' };
     if (service.status !== 'remote') {
       item.reachable = service.status === 'local_build' || service.status === 'pinned';
@@ -211,13 +216,15 @@ export async function getProjectUpdates(project, { force = false } = {}) {
       const local = await localImageInfo(docker, parsed.original);
       let remote = remoteDigests.get(parsed.original);
       if (remote === undefined) {
-        remote = await fetchRemoteDigest(parsed);
+        remote = await fetchRemoteDigest(parsed, { signal });
         remoteDigests.set(parsed.original, remote);
       }
       Object.assign(item, compareImageDigests(local, remote, parsed), { reachable: true });
     } catch (error) {
+      signal?.throwIfAborted();
       item.status = 'failed';
-      item.error = error.message;
+      item.error = error.name === 'AbortError' || error.name === 'TimeoutError'
+        ? '镜像仓库响应超时，请检查宿主机网络后重试' : error.message;
       item.reachable = false;
     }
     images.push(item);
@@ -229,6 +236,7 @@ export async function getProjectUpdates(project, { force = false } = {}) {
     images,
     hasUpdate: images.some((item) => item.hasUpdate),
   };
+  signal?.throwIfAborted();
   cache.set(project.id, { ts: Date.now(), data });
   return data;
 }

@@ -188,7 +188,7 @@ export const api = {
   setActiveHost: (hostId) => request('/hosts/active', { method: 'PUT', body: JSON.stringify({ hostId }) }),
   getActiveHost: () => request('/hosts/active'),
   // image update radar
-  getProjectUpdates: (projectId, force = false) => request(`/projects/${projectId}/updates?force=${force ? '1' : '0'}`),
+  getProjectUpdates: (projectId, force = false, options = {}) => request(`/projects/${projectId}/updates?force=${force ? '1' : '0'}`, options),
   getProjectWebUi: (projectId) => request(`/projects/${projectId}/webui`),
   getProjectCredentials: (projectId) => request(`/projects/${projectId}/credentials`, { cache: 'no-store' }),
   saveProjectCredentials: (projectId, payload) => request(`/projects/${projectId}/credentials`, { method: 'PUT', body: JSON.stringify(payload) }),

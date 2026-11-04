@@ -213,21 +213,37 @@ export async function maintenanceOverview() {
   return {
     hostId: host.id,
     settings: backupSettings(),
-    containers: containers.map((c) => ({
-      id: c.Id,
-      name: c.Names?.[0]?.replace(/^\//, '') || c.Id,
-      image: c.Image,
-      state: c.State,
-      projectName: c.Labels?.['com.docker.compose.project'] || '',
-      helper: !!c.Labels?.['composeops.helper'],
-      service: c.Labels?.['com.docker.compose.service'] || '',
-      projectId:
-        projects.find(
-          (p) =>
-            p.projectName === c.Labels?.['com.docker.compose.project'] &&
-            p.workingDir === c.Labels?.['com.docker.compose.project.working_dir'],
-        )?.id || null,
-    })),
+    containers: containers.map((c) => {
+      const project = projects.find(
+        (p) =>
+          p.projectName === c.Labels?.['com.docker.compose.project'] &&
+          p.workingDir === c.Labels?.['com.docker.compose.project.working_dir'],
+      );
+      return {
+        id: c.Id,
+        name: c.Names?.[0]?.replace(/^\//, '') || c.Id,
+        image: c.Image,
+        state: c.State,
+        projectName: c.Labels?.['com.docker.compose.project'] || '',
+        helper: !!c.Labels?.['composeops.helper'],
+        self:
+          host.type === 'local' &&
+          !!process.env.HOSTNAME &&
+          (c.Id === process.env.HOSTNAME || c.Id.startsWith(process.env.HOSTNAME)),
+        service: c.Labels?.['com.docker.compose.service'] || '',
+        projectId: project?.id || null,
+        updateCheckAvailable: !!project?.editable,
+        updateCheckReason: !project
+          ? '没有可读取的 Compose 定义'
+          : !project.managed
+            ? '请先在设置中纳管此应用'
+            : !project.mountEnabled
+              ? '请先在设置中授权 Compose 目录访问'
+              : !project.editable
+                ? '当前节点无法读取 Compose 配置'
+                : '',
+      };
+    }),
     tasks: state.tasks.filter((t) => t.hostId === host.id).slice(0, 100),
     backups: state.backups.filter((b) => b.hostId === host.id),
   };

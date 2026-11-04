@@ -108,6 +108,33 @@ test('image-updater: Docker Hub official image 的匿名 token 使用 library �
   }
 });
 
+test('image-updater: 中止检查会立即中断 Docker Hub token 请求，不继续访问 manifest', async () => {
+  const originalFetch = globalThis.fetch;
+  const controller = new AbortController();
+  let tokenStarted;
+  const started = new Promise((resolve) => {
+    tokenStarted = resolve;
+  });
+  let calls = 0;
+  globalThis.fetch = async (_url, { signal }) => {
+    calls++;
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      tokenStarted();
+    });
+  };
+  try {
+    const result = fetchRemoteDigest(parseImageRef('nginx:alpine'), { signal: controller.signal });
+    await started;
+    controller.abort();
+    await assert.rejects(result, { name: 'AbortError' });
+    assert.equal(calls, 1);
+  } finally {
+    // eslint-disable-next-line require-atomic-updates -- restore the temporary network stub.
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('image-updater: 旧维护结果格式保留项目/服务，并将本地构建与检查失败分开', () => {
   const results = flattenUpdateResults([{ projectId: 'p1', projectName: 'demo', images: [
     { service: 'web', image: 'nginx:latest', hasUpdate: true, status: 'updated', localDigest: 'sha256:a', remoteDigest: 'sha256:b' },

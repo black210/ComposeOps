@@ -600,10 +600,20 @@ export default async function projectRoutes(fastify) {
   }, async (request, reply) => {
     const project = await projectOr404(request.params.id, reply);
     if (!project) return;
+    const controller = new AbortController();
+    const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
+    reply.raw.on('close', disconnected);
     try {
-      return await getProjectUpdates(project, { force: request.query.force === '1' });
+      return await getProjectUpdates(project, {
+        force: request.query.force === '1',
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
+      });
     } catch (error) {
-      return reply.code(error.statusCode || 502).send({ error: 'updates_check_failed', message: error.message });
+      const timeout = error.name === 'TimeoutError';
+      return reply.code(timeout ? 504 : error.statusCode || 502).send({ error: 'updates_check_failed',
+        message: timeout ? '应用镜像检查超过 30 秒，请检查镜像仓库连接后重试' : error.message });
+    } finally {
+      reply.raw.off('close', disconnected);
     }
   });
 

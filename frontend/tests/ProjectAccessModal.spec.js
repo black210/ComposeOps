@@ -79,6 +79,7 @@ describe('环境与密钥统一入口', () => {
     await start();
     await wrapper.get('[aria-label="TZ 变量值"]').setValue('UTC');
     await button('仅保存文件').trigger('click');
+    expect(tab('账号密码').attributes('disabled')).toBeDefined();
     await tab('账号密码').trigger('click');
     await flushPromises();
     expect(tab('环境变量').attributes('aria-pressed')).toBe('true');

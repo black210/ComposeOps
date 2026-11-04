@@ -5,9 +5,9 @@
              @close="emit('close')" @refresh="emit('refresh')" @apply="emit('apply', $event)">
     <template #navigation>
       <div class="access-navigation" role="group" aria-label="环境与密钥页签">
-        <button :class="{ active: activeTab === 'env' }" :aria-pressed="activeTab === 'env'" :disabled="switching || !project.editable"
+        <button :class="{ active: activeTab === 'env' }" :aria-pressed="activeTab === 'env'" :disabled="switching || panel?.switchBlocked || !project.editable"
                 :title="project.editable ? '编辑项目环境变量文件' : '请先启用项目的 Compose 目录能力'" @click="switchTab('env')"><SlidersHorizontal class="h-4 w-4" />环境变量</button>
-        <button :class="{ active: activeTab === 'credentials' }" :aria-pressed="activeTab === 'credentials'" :disabled="switching" @click="switchTab('credentials')"><KeyRound class="h-4 w-4" />账号密码</button>
+        <button :class="{ active: activeTab === 'credentials' }" :aria-pressed="activeTab === 'credentials'" :disabled="switching || panel?.switchBlocked" @click="switchTab('credentials')"><KeyRound class="h-4 w-4" />账号密码</button>
       </div>
     </template>
   </component>

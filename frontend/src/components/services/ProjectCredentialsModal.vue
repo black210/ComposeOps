@@ -90,7 +90,7 @@ function close() {
   else emit('close');
 }
 function requestLeave() {
-  if (loading.value || saving.value || discard.value) return Promise.resolve(false);
+  if (switchBlocked.value) return Promise.resolve(false);
   if (!dirty.value) return Promise.resolve(true);
   discard.value = true;
   return new Promise(resolve => { leaveResolve = resolve; });
@@ -101,7 +101,8 @@ function confirmDiscard() {
   else emit('close');
 }
 function cancelDiscard() { discard.value = false; leaveResolve?.(false); leaveResolve = null; }
-defineExpose({ requestLeave });
+const switchBlocked = computed(() => loading.value || saving.value || discard.value);
+defineExpose({ requestLeave, switchBlocked });
 async function save() {
   if (loading.value || saving.value || loadError.value) return;
   if (entries.value.some((entry) => !entry.username && !entry.password)) { toast.error('每组请填写账号或密码'); return; }

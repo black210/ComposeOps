@@ -15,6 +15,7 @@
     </template>
 
     <slot name="navigation" />
+    <p v-if="loading" class="shrink-0 px-4 py-2 text-xs text-surface-500" role="status">正在读取环境变量…</p>
     <!-- 模式切换 Tab -->
     <div class="tabs shrink-0 px-4 pt-2">
         <button :class="{ active: mode === 'table' }" @click="mode = 'table'"><ListOrdered class="h-4 w-4" />键值表格</button>
@@ -286,11 +287,12 @@ function confirmPending() {
 }
 function cancelPending() { pendingConfirm.value?.resolve?.(false); pendingConfirm.value = null; }
 function requestLeave() {
-  if (loading.value || saving.value || pendingConfirm.value || confirm.value || restorePending.value || previewLoading.value || showPreview.value) return Promise.resolve(false);
+  if (switchBlocked.value) return Promise.resolve(false);
   if (!dirty.value) return Promise.resolve(true);
   return new Promise(resolve => { pendingConfirm.value = { type: 'leave', message: '有未保存的环境变量修改，切换页签会丢失这些内容。继续？', resolve }; });
 }
-defineExpose({ requestLeave });
+const switchBlocked = computed(() => loading.value || saving.value || !!pendingConfirm.value || confirm.value || !!restorePending.value || previewLoading.value || showPreview.value);
+defineExpose({ requestLeave, switchBlocked });
 onBeforeUnmount(cancelPending);
 async function saveOnly() { await doSave(false); }
 async function saveAndApply() { pendingApply.value = true; confirm.value = true; }

@@ -15,7 +15,7 @@
     <!-- 过滤器 -->
     <div class="toolbar-panel flex flex-wrap items-center gap-2">
       <select v-model="projectId" class="input sm:w-44" aria-label="项目筛选" @change="load">
-        <option value="">全部纳管项目</option>
+        <option value="">全部项目</option>
         <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.projectName }}</option>
       </select>
       <select v-model="days" class="input sm:w-32" aria-label="时间窗口" @change="load">
@@ -252,7 +252,7 @@ async function load() {
     ]);
 
     if (projectsResult.status === 'fulfilled') {
-      projects.value = (projectsResult.value?.projects || []).filter((project) => project.managed);
+      projects.value = (projectsResult.value?.projects || []);
     }
     if (uptimeResult.status === 'fulfilled') {
       const report = uptimeResult.value || {};

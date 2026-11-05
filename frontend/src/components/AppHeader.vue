@@ -24,30 +24,33 @@
       <div class="relative">
         <button ref="projectSwitcherTriggerRef" class="btn-secondary min-h-8! px-2.5! py-1! text-xs" title="快速切换项目" aria-label="快速切换项目" :aria-expanded="projectSwitcherOpen" :aria-controls="projectSwitcherOpen ? 'project-switcher-panel' : undefined" @click="toggleProjectSwitcher">
           <Layers class="w-3.5 h-3.5" /><span class="hidden min-[380px]:inline">项目</span>
-          <ChevronDown class="w-3 h-3" />
+          <ChevronDown class="dropdown-chevron" />
         </button>
-        <div v-if="projectSwitcherOpen" class="command-backdrop" @click.self="projectSwitcherOpen = false"></div>
-        <div v-if="projectSwitcherOpen" id="project-switcher-panel" ref="projectSwitcherPanelRef" class="absolute right-0 top-full mt-2 w-64 overflow-hidden rounded-xl border border-surface-800 bg-surface-950 shadow-2xl z-60" role="dialog" aria-modal="true" aria-labelledby="project-switcher-title" tabindex="-1" @keydown="trapProjectSwitcherTab">
+        <Teleport to="body">
+        <div v-if="projectSwitcherOpen" class="header-popover-backdrop" aria-hidden="true" @click.self="projectSwitcherOpen = false"></div>
+        <div v-if="projectSwitcherOpen" id="project-switcher-panel" ref="projectSwitcherPanelRef" class="header-popover" :style="projectSwitcherStyle" role="dialog" aria-modal="true" aria-labelledby="project-switcher-title" tabindex="-1" @keydown="trapProjectSwitcherTab">
           <div id="project-switcher-title" class="border-b border-surface-800 px-3 py-2 text-xs font-semibold text-surface-300">快速切换项目</div>
           <label class="search-field mx-2 my-2 flex-none">
             <Search class="h-3.5 w-3.5 shrink-0" />
             <input ref="projectSwitcherSearchRef" v-model="projectQuery" type="search" aria-label="搜索项目" placeholder="搜索项目、归属或路径" />
           </label>
-          <div class="max-h-80 overflow-y-auto p-1.5">
+          <div class="min-h-0 max-h-80 overflow-y-auto p-1.5">
             <button v-for="p in quickProjects" :key="p.id" class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-surface-800/60" @click="goProject(p)">
               <span class="status-dot shrink-0" :class="projectStatusDotClass(p.status)"></span>
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-mono text-surface-200">{{ p.projectName }}</span>
+                <span class="block truncate text-sm font-mono text-surface-200">{{ p.displayName || p.projectName }}</span>
                 <span class="block truncate text-[10px] text-surface-500">{{ p.owner }} · {{ p.containers.length }} 容器</span>
               </span>
-              <span v-if="p.managed" class="count-badge shrink-0 text-[9px] text-emerald-300">纳管</span>
+              <span v-if="p.note?.trim()" class="max-w-32 truncate count-badge text-[9px]" :title="p.note">{{ p.note }}</span>
             </button>
             <p v-if="!quickProjects.length" class="px-2 py-4 text-center text-xs text-surface-600">{{ projectQuery ? '没有匹配的项目' : '暂无项目' }}</p>
           </div>
         </div>
+        </Teleport>
       </div>
       <HostSwitcher />
       <EventCenter />
+      <ThemeSelect compact />
       <button class="icon-btn" title="打开页面 Agent" aria-label="打开页面 Agent" @click="emitAgentOpen"><Bot class="w-4 h-4 text-accent" /></button>
       <button class="icon-btn hidden sm:inline-flex header-density" :title="density === 'compact' ? '切换为舒适视图' : '切换为紧凑视图'" aria-label="紧凑布局" :aria-pressed="density === 'compact'" @click="toggleDensity"><Rows3 class="w-4 h-4" /></button>
       <span class="hidden lg:inline text-muted">{{ currentTime }}</span>
@@ -77,10 +80,12 @@ import EventCenter from './EventCenter.vue';
 import HostSwitcher from './HostSwitcher.vue';
 import CommandPalette from './common/CommandPalette.vue';
 import ConfirmDialog from './common/ConfirmDialog.vue';
+import ThemeSelect from './common/ThemeSelect.vue';
 import { api, bumpHostEpoch } from '../api/client.js';
 import { useHostsStore } from '../stores/hosts.js';
 import { useToastStore } from '../stores/toast.js';
 import { useEscapeKey } from '../composables/useEscapeKey.js';
+import { useAnchoredPopover } from '../composables/useAnchoredPopover.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -94,6 +99,7 @@ const projectQuery = ref('');
 const projectSwitcherTriggerRef = ref(null);
 const projectSwitcherSearchRef = ref(null);
 const projectSwitcherPanelRef = ref(null);
+const projectSwitcherStyle = useAnchoredPopover(projectSwitcherOpen, projectSwitcherTriggerRef);
 let previousProjectSwitcherFocus = null;
 watch(projectSwitcherOpen, async (isOpen) => {
   if (isOpen) {
@@ -144,7 +150,7 @@ const quickProjects = computed(() => {
     .filter((project) => !query || [project.projectName, project.owner, project.workingDir].some((value) => String(value || '').toLocaleLowerCase().includes(query)))
     .slice(0, 20);
 });
-const pageNames = { dashboard: '运维总览', services: '服务总览', compose: 'Compose 配置', logs: '实时日志', shell: '容器终端', agent: 'AI 智能运维 Agent', 'agent-history': 'Agent 执行历史', inspection: 'AI 巡检中心', monitor: '实时监控', review: '变更与回滚', events: '事件中心', resources: '存储清理', cron: '定时任务', gitops: 'GitOps', cost: '成本分析', topology: '服务拓扑', 'ops-center': '运维任务', 'node-groups': '节点组管理', cmdb: '资产中心', workflows: '工作流', marketplace: '应用市场', settings: '系统设置' };
+const pageNames = { dashboard: '运维总览', services: '服务总览', compose: 'Compose 配置', logs: '实时日志', shell: '容器终端', agent: 'AI 智能运维 Agent', 'agent-history': 'Agent 执行历史', inspection: 'AI 巡检中心', monitor: '实时监控', review: '变更与回滚', events: '事件中心', resources: '存储清理', cron: '定时任务', gitops: 'GitOps', cost: '成本分析', topology: '服务拓扑', maintenance: '运维', 'node-groups': '节点组管理', cmdb: '资产中心', workflows: '工作流', marketplace: '应用市场', settings: '系统设置' };
 const currentPage = computed(() => pageNames[route.name] || '运维控制台');
 const envProjects = ref([]);
 const appBlueprints = ref([]);
@@ -163,7 +169,7 @@ const baseCommands = [
   { to: '/review', label: '变更与回滚', description: '部署前 AI 评审变更,出问题后一键回滚', icon: FileSearch, category: 'review rollback change 变更 评审 回滚' },
   { to: '/topology', label: '服务拓扑', description: '查看服务依赖、端口和数据卷关系', icon: Layers, category: 'topology dependencies graph 拓扑 依赖' },
   { to: '/agent/history', label: 'Agent 执行历史', description: '查看工具调用、执行结果与 token 用量', icon: History, category: 'agent history usage 历史 用量' },
-  { to: '/ops-center', label: '运维任务', description: '编排项目升级与自动巡检任务', icon: Play, category: 'operations jobs 运维 任务' },
+  { to: '/maintenance', label: '运维', description: '完整备份、更新前备份、115 与 WebDAV 同步', icon: Play, category: 'operations jobs backup sync 运维 任务 完整备份 同步' },
   { to: '/workflows', label: '工作流', description: '创建可复用流程并处理待审批任务', icon: Layers, category: 'workflow automation 自动化 审批' },
   { to: '/cron', label: '定时任务', description: '自动备份、清理与镜像检查', icon: History, category: 'cron schedule 定时 计划 备份' },
   { to: '/gitops', label: 'GitOps', description: '同步仓库并检查配置漂移', icon: FileCode2, category: 'git repository sync 仓库 同步 漂移' },
@@ -172,8 +178,8 @@ const baseCommands = [
   { to: '/marketplace', label: '应用市场', description: '发现、收藏和部署应用模板', icon: Store, category: 'marketplace app store 模板 应用 市场' },
   { to: '/resources', label: '存储清理', description: '管理镜像、卷、网络与数据卷备份', icon: Boxes, category: 'storage volume image network 存储 清理 备份' },
   { to: '/cost', label: '成本分析', description: '分析项目与镜像的资源占用', icon: ChartNoAxesCombined, category: 'cost resource 成本 分析' },
-  { to: '/settings', label: '系统设置', description: '配置通知、更新、AI 与项目纳管', icon: Settings, category: 'notification maintenance mounts 设置' },
-  { to: '/settings?tab=mounts', label: '项目纳管', description: '选择允许控制和编辑 Compose 的项目', icon: Boxes, category: 'permission mount compose 权限 目录' },
+  { to: '/settings', label: '系统设置', description: '配置通知、更新、AI 与项目目录', icon: Settings, category: 'notification maintenance mounts 设置' },
+  { to: '/settings?tab=mounts', label: '项目目录', description: '查看自动发现项目的 Compose 目录状态', icon: Boxes, category: 'permission mount compose 权限 目录' },
   { to: '/settings?tab=notifications', label: '异常通知', description: '设置容器、内存和存储告警渠道', icon: Settings, category: 'alert webhook telegram email 告警' },
   { to: '/settings?tab=maintenance', label: 'Docker 维护', description: '检查镜像更新并清理可回收空间', icon: Settings, category: 'prune image update cleanup 清理 镜像' },
 ];
@@ -209,7 +215,6 @@ const commands = computed(() => {
       category: `app store blueprint deploy marketplace 部署 应用市场 模板市场 ${blueprint.name}`,
     }));
   const actionCommands = asArray(allProjects.value)
-    .filter((project) => project.managed)
     .flatMap((project) => ([
       { id: `run-${project.id}-up`, run: () => void runProjectAction(project, 'up'), label: `启动: ${project.projectName}`, description: '通过 Compose 启动项目', icon: Play, category: `start up 启动 运行 ${project.projectName}` },
       { id: `run-${project.id}-restart`, run: () => void runProjectAction(project, 'restart'), label: `重启: ${project.projectName}`, description: '重启项目所有容器', icon: RotateCw, category: `restart reboot 重启 ${project.projectName}` },

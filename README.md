@@ -2,6 +2,10 @@
 
 # ComposeOps
 
+> 此 fork 面向「中文单面板 + 完整备份恢复」二开。新增“运维”入口：完整备份、更新前备份、保存路径配置及 115 官方授权 / WebDAV 备份同步。支持隔离解密校验，实际恢复界面仍待实现；范围与限制见[完整备份说明](docs/public/FULL_BACKUP_OPERATIONS.md)及[二开说明](docs/public/FORK_DEVELOPMENT.md)。
+
+支持[浅色、深色和跟随系统](docs/public/THEMES.md)，可在顶部或设置中即时切换，首次访问默认浅色。
+
 **轻量级 Docker Compose 运维面板，专为个人服务器设计**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -16,7 +20,7 @@
 
 <img src="docs/screenshots/dashboard.png" alt="ComposeOps 总览：AI 运维决策中心" width="900">
 <br>
-<img src="docs/screenshots/services.png" alt="服务总览：自动发现与纳管" width="49.4%">
+<img src="docs/screenshots/services.png" alt="服务总览：自动发现与管理" width="49.4%">
 <img src="docs/screenshots/monitor.png" alt="实时监控：容器资源与告警阈值" width="49.4%">
 <br>
 <img src="docs/screenshots/agent.png" alt="AI 运维 Agent：Tool Loop + 确认门" width="98.8%">
@@ -124,8 +128,10 @@ ComposeOps 面向个人服务器上的 Compose 运维，重点是可审核的 AI
 - 🔍 自动发现 Compose 项目（基于容器标签）
 - 🌐 多宿主管理：Local / TCP / SSH 节点切换
 - 📁 按 `myops.owner` 分组，支持收藏和备注
-- 🎯 显式纳管：默认只读，手动授权后开放控制
-- 🔐 双级权限：纳管（容器控制）+ Compose（配置编辑）
+- 🎯 自动管理：全部发现的 Compose 项目直接可操作，新增项目无需授权配置
+- 📂 自动识别目录能力：可用项目目录支持 Compose 编辑与重建，其他项目保留容器操作
+- ▶️ 服务页按 Compose 展开后，可操作整组或独立启停单个容器；单容器操作不会重建依赖，执行后读回状态并刷新列表。整组操作沿用容器标签中的真实项目名，支持项目名与目录名不一致的部署。
+- 服务页启动/停止时间取自 Docker `State.StartedAt/FinishedAt`，不使用容器创建时间推断；无法读取时不显示猜测时间。“运行镜像”表示现有容器实际使用的引用。重启沿用原镜像与配置；“重建”使用本地镜像应用当前 Compose 配置，不备份、不拉取。更新自动使用本节点默认路径完整备份，成功后拉取并重建，无需逐次确认；缺少默认路径或完整性预检失败时不会更新。恢复密钥由面板持久保存，可在备份记录页下载另存。
 
 </td>
 <td width="50%">
@@ -325,20 +331,17 @@ tailscale serve --bg http://127.0.0.1:28765
 
 ---
 
-## 📦 项目纳管
+服务卡片的每个应用入口旁可配置访问路径（例如 Lucky 的 `/web/`），实时预览完整链接并支持恢复默认；按 Docker 节点、应用服务与端口保存，重建容器后继续保留。
 
-### 发现与授权
+## 📦 项目自动管理
 
-打开"设置 → 项目纳管"，每个自动发现的项目有两个独立开关：
+当前 Docker 节点自动发现的全部 Compose 项目直接进入管理，新增项目也无需勾选。服务默认显示全部项目，项目名旁显示备注，保留按状态和收藏筛选。
 
-| 权限级别 | 说明 | 允许的操作 |
-|---------|------|-----------|
-| **纳管** | 现有容器控制 | 启动/停止/重启、日志、终端、AI 诊断 |
-| **Compose** | 配置编辑与拉取 | 编辑 YAML、环境变量、创建缺失服务、拉取镜像 |
+Compose 目录能力按节点类型与项目标签中的安全路径自动识别；路径缺失、过宽或越界时仅开放已有容器的启停、日志和终端。纯 Docker API 节点不提供远端文件编辑，SSH 节点可在远端访问项目目录。“设置 → 项目目录”只展示诊断状态，没有权限开关。
 
 ### 工作容器机制
 
-勾选 **Compose** 后，ComposeOps 按需创建短生命周期工作容器：
+访问本机项目的 Compose 配置时，ComposeOps 按需创建短生命周期工作容器：
 
 ```yaml
 # 自动创建的临时容器（项目作用域）
@@ -350,7 +353,7 @@ docker run -d --rm --name opsdash-ws-myapp \
 ```
 
 - **复用策略**：90 秒内连续操作无需重建
-- **自动清理**：空闲后销毁，取消勾选时立即清理
+- **自动清理**：空闲后销毁，按项目精确挂载目录
 - **配置调整**：
   - `COMPOSEOPS_WORKSPACE_IDLE_MS`：空闲保留时间（默认 90000 毫秒）
   - `COMPOSEOPS_WORKSPACE_CACHE_MAX`：最多缓存项目数（默认 8）

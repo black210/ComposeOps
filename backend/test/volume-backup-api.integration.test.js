@@ -86,10 +86,6 @@ test('isolated Docker + protected API: create, verify, download, restore, delete
   cookie = String(login.headers['set-cookie']).split(';', 1)[0];
   const headers = { cookie, origin: 'http://localhost:3001', host: 'localhost:3001' };
 
-  const management = await app.inject({ method: 'PUT', url: '/api/v1/projects/management', headers, payload: { projectIds: [projectId], mountProjectIds: [projectId] } });
-  assert.equal(management.statusCode, 200, management.body);
-  invalidateScanCache();
-
   const volumeList = await app.inject({ method: 'GET', url: '/api/v1/ops/storage/volume-volumes?projectId=' + projectId, headers });
   assert.equal(volumeList.statusCode, 200, volumeList.body);
   assert.ok(volumeList.json().volumes.some((volume) => volume.name === volumeName && volume.exists === true), volumeList.body);

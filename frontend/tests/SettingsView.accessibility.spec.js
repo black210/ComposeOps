@@ -103,3 +103,18 @@ describe('设置页面表单可访问性', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('请填写当前密码');
   });
 });
+
+
+it('项目目录只显示自动识别结果，不提供纳管或 Compose 勾选', async () => {
+  mocks.api.getMountPlan.mockResolvedValue({ projects: [
+    { id: 'direct', projectName: '自动项目', workingDir: '/apps/test', editable: true, mounted: false },
+    { id: 'tcp', projectName: 'TCP项目', workingDir: '/apps/tcp', editable: false, mountState: 'remote_api_only' },
+  ], summary: {} });
+  await mountSettings();
+  await wrapper.findAll('button').find(button => button.text().trim() === '项目目录').trigger('click');
+  expect(wrapper.text()).toContain('无需选择或应用配置');
+  expect(wrapper.text()).toContain('Compose 按需');
+  expect(wrapper.text()).toContain('只有 Docker API');
+  expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(0);
+  expect(wrapper.text()).not.toMatch(/应用选择|选择管理范围|已纳管/);
+});

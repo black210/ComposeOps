@@ -66,10 +66,11 @@
 import { nextTick, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useEscapeKey } from '../composables/useEscapeKey.js';
-import { ChevronDown, CircleHelp, Boxes, Clock3, FileCode2, ScrollText, TerminalSquare, Bot, ChartNoAxesCombined, HardDrive, Settings, Store, Activity, GitBranch, DollarSign, Menu, ShieldCheck, Network, FileSearch, ClipboardList, Workflow, ServerCog, Database, BellRing, History } from 'lucide-vue-next';
+import { ChevronDown, CircleHelp, Boxes, Clock3, FileCode2, ScrollText, TerminalSquare, Bot, ChartNoAxesCombined, HardDrive, Settings, Store, Activity, GitBranch, DollarSign, Menu, ShieldCheck, Network, FileSearch, Wrench, Workflow, ServerCog, Database, BellRing, History } from 'lucide-vue-next';
 const primaryItems = [
   { to: '/dashboard', icon: Activity, label: '总览' },
   { to: '/services', icon: Boxes, label: '服务' },
+  { to: '/maintenance', icon: Wrench, label: '运维' },
   { to: '/compose', icon: FileCode2, label: '配置' },
   { to: '/logs', icon: ScrollText, label: '日志' },
   { to: '/agent', icon: Bot, label: 'AI 助手' },
@@ -88,7 +89,6 @@ const navGroups = [
   {
     label: '自动化',
     items: [
-      { to: '/ops-center', icon: ClipboardList, label: '运维任务' },
       { to: '/workflows', icon: Workflow, label: '工作流' },
       { to: '/cron', icon: Clock3, label: '定时任务' },
       { to: '/gitops', icon: GitBranch, label: 'GitOps' },
@@ -130,8 +130,8 @@ watch(() => route.path, (value) => {
   if (group) expandedGroups.value[group.label] = true;
 }, { immediate: true });
 const moreOpen = ref(false);
-const mobileItems = [primaryItems[0], primaryItems[1], primaryItems[3], primaryItems[4]];
-const mobileGroups = navGroups;
+const mobileItems = primaryItems.filter(item => ['/dashboard','/services','/maintenance','/agent'].includes(item.to));
+const mobileGroups = [{label:'运行',items:primaryItems.filter(item=>!mobileItems.includes(item))},...navGroups];
 const moreTriggerRef = ref(null);
 const moreDialogRef = ref(null);
 let previousMoreFocus = null;

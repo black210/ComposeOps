@@ -80,11 +80,11 @@ describe('状态历史面板', () => {
     expect(row.text()).not.toContain('%');
   });
 
-  it('项目下拉只列纳管项目,选择后按 projectId 重新请求', async () => {
+  it('项目下拉列出所有发现项目,选择后按 projectId 重新请求', async () => {
     await start();
     const select = wrapper.findAll('select')[0];
     const options = select.findAll('option').map((option) => option.text());
-    expect(options.some((text) => text.includes('scratch'))).toBe(false);
+    expect(options.some((text) => text.includes('scratch'))).toBe(true);
 
     await select.setValue('p1');
     await flushPromises();

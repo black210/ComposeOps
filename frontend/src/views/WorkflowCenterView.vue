@@ -102,7 +102,7 @@
             <label class="form-grid-label sm:col-span-2"><span>事件类型(必填，逗号分隔)</span><input v-model="form.triggerConfig.eventTypes" class="input" placeholder="container, alert, gitops" /></label>
             <label class="form-grid-label"><span>来源(可选)</span><input v-model="form.triggerConfig.sources" class="input" placeholder="docker, alert" /></label>
             <label class="form-grid-label"><span>动作(可选)</span><input v-model="form.triggerConfig.actions" class="input" placeholder="die, health_status: unhealthy" /></label>
-            <label class="form-grid-label sm:col-span-2"><span>项目 ID(可选，限制到一个纳管项目)</span><input v-model="form.triggerConfig.projectId" class="input" placeholder="不填则匹配所选事件类型的所有纳管项目" /></label>
+            <label class="form-grid-label sm:col-span-2"><span>项目 ID(可选，限制到一个项目)</span><input v-model="form.triggerConfig.projectId" class="input" placeholder="不填则匹配所选事件类型的所有项目" /></label>
             <p class="sm:col-span-2 text-xs text-surface-500">事件必须显式选择类型。工作流自身事件不会再次触发工作流；Docker、告警和统一事件中心事件均经过去重。</p>
           </div>
           <div v-else-if="form.triggerType === 'cron'" class="grid gap-2 rounded-lg border border-surface-800 bg-surface-950/40 p-3 sm:grid-cols-2">
@@ -310,7 +310,7 @@ async function load() {
 }
 async function loadProjects() {
   try {
-    projects.value = ((await api.getProjects(true)).projects || []).filter((project) => project.managed);
+    projects.value = ((await api.getProjects(true)).projects || []);
   } catch {
     projects.value = [];
   }

@@ -225,12 +225,12 @@ async function doDelete() {
 }
 onMounted(async () => {
   try {
-    projects.value = ((await api.getProjects(true)).projects || []).filter((project) => project.managed);
+    projects.value = ((await api.getProjects(true)).projects || []);
   } catch { projects.value = []; }
   await loadBackups();
 });
 </script>
 
 <style scoped>
-.form-grid-label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #71717a; }
+.form-grid-label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-faint); }
 </style>

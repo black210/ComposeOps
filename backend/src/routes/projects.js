@@ -1,21 +1,22 @@
 import { findProject, scanProjects } from '../services/scanner.js';
 import { buildMountPlan } from '../services/mount-plan.js';
 import { readCompose, saveCompose } from '../services/compose-runner.js';
-import { pruneWorkspaceRunners, readWorkspaceCompose, saveWorkspaceCompose } from '../services/compose-workspace.js';
+import { readWorkspaceCompose, saveWorkspaceCompose } from '../services/compose-workspace.js';
 import { prepareProjectAction } from '../services/project-action-runner.js';
 import { readProjectEnv, saveProjectEnv, applyProjectEnv, assertEnvAccess, listProjectEnvFiles, normalizeEnvFileName } from '../services/project-env.js';
 import { listProjectEnvBackups, restoreProjectEnvBackup } from '../services/project-env-backups.js';
-import { getProjectUpdates, upgradeProject, rollbackProject } from '../services/image-updater.js';
+import { getProjectUpdates, rollbackProject } from '../services/image-updater.js';
+import { startProjectUpdate } from '../services/container-maintenance.js';
 import { readContainerStat } from '../services/stats.js';
 import { validateComposeSemantics, previewComposeChange } from '../services/compose-validator.js';
 import { listProjectDbContainers, runDbDump } from '../services/db-dumper.js';
-import { scanProjectWebPorts, buildWebUiLinks } from '../services/project-ports.js';
+import { registerProjectWebUiRoutes } from './project-webui-settings.js';
+import { registerProjectCredentialRoutes } from './project-credentials.js';
 import {
   addOperation,
   getComposeBackup,
   listComposeBackups,
   listProjectOperations,
-  setProjectManagement,
   setProjectPreference,
 } from '../lib/db.js';
 
@@ -27,7 +28,7 @@ async function projectOr404(id, reply) {
 
 function requireManaged(project, reply) {
   if (!project.managed) {
-    reply.code(403).send({ error: 'project_not_managed', message: '项目尚未加入管理，请先在项目纳管中勾选' });
+    reply.code(403).send({ error: 'project_not_managed', message: '项目不存在或当前不可见' });
     return false;
   }
   return true;
@@ -36,7 +37,7 @@ function requireManaged(project, reply) {
 function requireEditable(project, reply) {
   if (!requireManaged(project, reply)) return false;
   if (!project.mountEnabled) {
-    reply.code(403).send({ error: 'compose_access_not_enabled', message: '尚未为该项目启用 Compose 目录能力' });
+    reply.code(403).send({ error: 'compose_access_not_enabled', message: '当前节点或项目路径不支持 Compose 目录访问' });
     return false;
   }
   if (!project.editable) {
@@ -48,17 +49,13 @@ function requireEditable(project, reply) {
 
 /**
  * 本文件的 schema 一律不接管服务端已有的语义,几处必须留手:
- * 1. projectIds/mountProjectIds 的数组元素刻意不声明 items.type —— coerceTypes 会把
- *    [123] 悄悄转成 ['123'],让处理函数的 `typeof id !== 'string'` 检查形同虚设,
- *    invalid_project_ids 也就永远返回不了;这里只收数组本身与长度上限(与处理函数的
- *    1000 对齐),元素类型仍由处理函数判定;
- * 2. content/favorite/note/containerId 都不设 required —— 处理函数各自返回
+ * 1. content/favorite/note/containerId 都不设 required —— 处理函数各自返回
  *    invalid_content / invalid_favorite / invalid_note / missing_container 机器码;
- * 3. action 不设 enum:compose-runner 的 ACTIONS 是唯一事实来源,
+ * 2. action 不设 enum:compose-runner 的 ACTIONS 是唯一事实来源,
  *    未知 action 由 assertProjectActionAllowed 抛出 unsupported_action;
  *    抄一份 enum 进 schema 只会多出一处必然漂移的规则;
- * 4. force 收 string —— 处理函数按 `=== '1'` 比较,声明成数字会让判断永远为假;
- * 5. interval/limit/fileIndex 越界由处理函数与 db.js 的 clamp 兜住,schema 只挡非数值。
+ * 3. force 收 string —— 处理函数按 `=== '1'` 比较,声明成数字会让判断永远为假;
+ * 4. interval/limit/fileIndex 越界由处理函数与 db.js 的 clamp 兜住,schema 只挡非数值。
  *
  * env 的 raw/entries 承载 .env 明文(可能含密钥),故本文件不声明任何 response schema,
  * 这些字段只走请求体。
@@ -80,79 +77,26 @@ const backupParams = {
   },
 };
 
-// 元素类型交给处理函数:见文件头第 1 条。
-const projectIdList = { type: 'array', maxItems: 1000 };
-
 // YAML 正文与 .env 明文都可能很大,上限只用于挡住畸形巨包。
 const CONTENT_MAX = 1048576;
 
-// 只挡非数值:越界与缺省由处理函数的 `Number(x) || 0` 与下游读取器兜住(见文件头第 5 条)。
+// 只挡非数值:越界与缺省由处理函数的 `Number(x) || 0` 与下游读取器兜住(见文件头第 4 条)。
 const fileIndexField = { type: 'number' };
 
 export default async function projectRoutes(fastify) {
+  registerProjectCredentialRoutes(fastify);
+  registerProjectWebUiRoutes(fastify);
   fastify.get('/', async () => ({ projects: await scanProjects() }));
 
   fastify.get('/mount-plan', async () => buildMountPlan(await scanProjects()));
 
-  fastify.put('/management', {
-    schema: {
-      body: {
-        type: 'object',
-        additionalProperties: false,
-        properties: { projectIds: projectIdList, mountProjectIds: projectIdList },
-      },
-    },
-  }, async (request, reply) => {
-    const projectIds = request.body?.projectIds;
-    const mountProjectIds = request.body?.mountProjectIds ?? [];
-    if (!Array.isArray(projectIds) || projectIds.length > 1000 ||
-        projectIds.some((id) => typeof id !== 'string') ||
-        !Array.isArray(mountProjectIds) || mountProjectIds.length > 1000 ||
-        mountProjectIds.some((id) => typeof id !== 'string')) {
-      return reply.code(400).send({ error: 'invalid_project_ids', message: '项目选择格式无效' });
-    }
-    const projects = await scanProjects();
-    const discoveredIds = projects.map((project) => project.id);
-    const discoveredSet = new Set(discoveredIds);
-    if (projectIds.some((id) => !discoveredSet.has(id)) || mountProjectIds.some((id) => !discoveredSet.has(id))) {
-      return reply.code(400).send({ error: 'unknown_project', message: '选择中包含当前未发现的项目' });
-    }
-    const selectedIds = [...new Set(projectIds)];
-    const selectedMountIds = [...new Set(mountProjectIds)].filter((id) => selectedIds.includes(id));
-    const result = setProjectManagement(discoveredIds, selectedIds, selectedMountIds);
-    pruneWorkspaceRunners(selectedMountIds);
-    addOperation({
-      action: 'projects.management',
-      status: 'success',
-      detail: projects.filter((project) => selectedIds.includes(project.id)).map((project) => project.projectName).join(', '),
-    });
-    return result;
-  });
-
-  // 目录能力是纳管权限的子集。保留独立端点，便于设置页只调整挂载选择。
-  fastify.put('/mounts', {
-    schema: {
-      body: { type: 'object', additionalProperties: false, properties: { projectIds: projectIdList } },
-    },
-  }, async (request, reply) => {
-    const mountProjectIds = request.body?.projectIds;
-    if (!Array.isArray(mountProjectIds) || mountProjectIds.length > 1000 ||
-        mountProjectIds.some((id) => typeof id !== 'string')) {
-      return reply.code(400).send({ error: 'invalid_project_ids', message: '项目选择格式无效' });
-    }
-    const projects = await scanProjects();
-    const discoveredIds = projects.map((project) => project.id);
-    const discoveredSet = new Set(discoveredIds);
-    if (mountProjectIds.some((id) => !discoveredSet.has(id))) {
-      return reply.code(400).send({ error: 'unknown_project', message: '选择中包含当前未发现的项目' });
-    }
-    const managedIds = projects.filter((project) => project.managed).map((project) => project.id);
-    const selectedMountIds = [...new Set(mountProjectIds)].filter((id) => managedIds.includes(id));
-    const result = setProjectManagement(discoveredIds, managedIds, selectedMountIds);
-    pruneWorkspaceRunners(selectedMountIds);
-    addOperation({ action: 'projects.mounts', status: 'success', detail: selectedMountIds.join(', ') });
-    return result;
-  });
+  // 旧客户端不能通过历史白名单关闭自动管理，也不修改备注/收藏等个人数据。
+  for (const route of ['/management', '/mounts']) {
+    fastify.put(route, async (_request, reply) => reply.code(410).send({
+      error: 'automatic_project_management',
+      message: '所有项目已自动管理，Compose 目录能力自动识别，无需保存选择',
+    }));
+  }
 
   fastify.get('/:id', { schema: { params: idParams } }, async (request, reply) => {
     const project = await projectOr404(request.params.id, reply);
@@ -545,16 +489,17 @@ export default async function projectRoutes(fastify) {
   fastify.post('/:id/actions', {
     schema: {
       params: idParams,
-      body: { type: 'object', additionalProperties: false, properties: { action: { type: 'string', maxLength: 32 } } },
+      body: { type: 'object', additionalProperties: false, properties: { action: { type: 'string', maxLength: 32 }, containerId: { type: 'string', minLength: 1, maxLength: 128 } } },
     },
   }, async (request, reply) => {
     const project = await projectOr404(request.params.id, reply);
     if (!project) return;
     const action = request.body?.action;
     let prepared;
-    try { prepared = await prepareProjectAction(project, action); }
+    try { prepared = await prepareProjectAction(project, action, request.body?.containerId); }
     catch (error) { return reply.code(error.statusCode || 400).send({ error: 'unsupported_action', message: error.message }); }
 
+    reply.hijack();
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -565,7 +510,10 @@ export default async function projectRoutes(fastify) {
       if (reply.raw.destroyed || reply.raw.writableEnded) return;
       reply.raw.write(`data: ${JSON.stringify({ type, data })}\n\n`);
     };
-    let output = '';
+    let output = prepared.container ? `仅操作容器 ${prepared.container.name}\n` : `操作 Compose 项目 ${project.projectName}\n`;
+    if (action === 'restart') output += '重启沿用当前镜像；应用当前配置可重建，拉取新镜像请使用更新。\n';
+    if (action === 'rebuild') output += '按当前 Compose 配置重建应用，不执行备份，不拉取或构建镜像；本地镜像缺失时将报错。\n';
+    send('stdout', output);
     let finished = false;
     const finish = (code) => {
       if (finished) return;
@@ -581,12 +529,13 @@ export default async function projectRoutes(fastify) {
       reply.raw.end();
     };
     let child;
-    prepared.run((type, text) => { output += text; send(type, text); }, (process) => { child = process; })
+    const execution = prepared.run((type, text) => { output += text; send(type, text); }, (process) => { child = process; })
       .then(finish)
       .catch((error) => { const text = `${error.message}\n`; output += text; send('stderr', text); finish(1); });
     reply.raw.on('close', () => {
       if (!finished && child && child.exitCode === null && !child.killed) child.kill('SIGTERM');
     });
+    await execution;
   });
   // ---- 镜像更新雷达 ----
   // force 收 string:处理函数按 `=== '1'` 比较,见文件头第 4 条。
@@ -598,10 +547,20 @@ export default async function projectRoutes(fastify) {
   }, async (request, reply) => {
     const project = await projectOr404(request.params.id, reply);
     if (!project) return;
+    const controller = new AbortController();
+    const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
+    reply.raw.on('close', disconnected);
     try {
-      return await getProjectUpdates(project, { force: request.query.force === '1' });
+      return await getProjectUpdates(project, {
+        force: request.query.force === '1',
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
+      });
     } catch (error) {
-      return reply.code(error.statusCode || 502).send({ error: 'updates_check_failed', message: error.message });
+      const timeout = error.name === 'TimeoutError';
+      return reply.code(timeout ? 504 : error.statusCode || 502).send({ error: 'updates_check_failed',
+        message: timeout ? '应用镜像检查超过 30 秒，请检查镜像仓库连接后重试' : error.message });
+    } finally {
+      reply.raw.off('close', disconnected);
     }
   });
 
@@ -630,7 +589,6 @@ export default async function projectRoutes(fastify) {
       if (reply.raw.destroyed || reply.raw.writableEnded) return;
       reply.raw.write(`data: ${JSON.stringify({ type, data })}\n\n`);
     };
-    let output = '';
     let finished = false;
     const finish = (payload) => {
       if (finished) return;
@@ -638,22 +596,17 @@ export default async function projectRoutes(fastify) {
       send('result', payload);
       reply.raw.end();
     };
-    let child;
-    upgradeProject(project, {
-      services: request.body.services,
-      onOutput: (type, text) => { output += text; send(type, text); },
-      onChild: (process) => { child = process; },
-    }).then((result) => {
-      send('exit', { code: result.code });
-      finish({ ok: true, ...result, output });
+    reply.hijack();
+    await startProjectUpdate(project).then((task) => {
+      const text = '已提交完整备份后更新任务 ' + task.id + '，进度请查看运维任务记录。\n';
+      send('stdout', text);
+      send('exit', { code: 0 });
+      finish({ ok: true, taskId: task.id, status: task.status });
     }).catch((error) => {
-      const text = `${error.message}\n`;
-      output += text;
+      const text = error.message + '\n';
       send('stderr', text);
-      finish({ ok: false, message: error.message, output });
-    });
-    reply.raw.on('close', () => {
-      if (!finished && child && child.exitCode === null && !child.killed) child.kill('SIGTERM');
+      send('exit', { code: 1 });
+      finish({ ok: false, message: error.message });
     });
   });
 
@@ -731,12 +684,4 @@ export default async function projectRoutes(fastify) {
     }
   });
 
-  // ---- WebUI 智能雷达 ----
-  fastify.get('/:id/webui', { schema: { params: idParams } }, async (request, reply) => {
-    const project = await projectOr404(request.params.id, reply);
-    if (!project) return;
-    const entries = scanProjectWebPorts(project);
-    const links = buildWebUiLinks(request.headers.host, entries);
-    return { projectId: project.id, projectName: project.projectName, links };
-  });
 }

@@ -53,25 +53,25 @@ defineEmits(['dismiss']);
 .info-panel.info {
   background: rgb(14 165 233 / 0.08);
   border-color: rgb(14 165 233 / 0.2);
-  color: rgb(125 211 252);
+  color: var(--cyan-strong);
 }
 
 .info-panel.warning {
   background: rgb(251 191 36 / 0.08);
   border-color: rgb(251 191 36 / 0.2);
-  color: rgb(253 224 71);
+  color: var(--warn);
 }
 
 .info-panel.success {
   background: rgb(34 197 94 / 0.08);
   border-color: rgb(34 197 94 / 0.2);
-  color: rgb(134 239 172);
+  color: var(--ok);
 }
 
 .info-panel.error {
   background: rgb(239 68 68 / 0.08);
   border-color: rgb(239 68 68 / 0.2);
-  color: rgb(252 165 165);
+  color: var(--danger);
 }
 
 .info-panel.dismissible {

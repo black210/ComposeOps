@@ -43,6 +43,9 @@
     <Skeleton v-if="loading && !data && activeTab !== 'backups'" variant="table" :rows="6" label="资源清单加载中" />
 
     <section v-if="activeTab === 'backups'" class="section-panel flex-1 mt-4">
+      <FullBackupPlanPanel />
+      <div class="my-6 border-t border-surface-800"></div>
+      <h2 class="section-title mb-3">现有命名卷备份</h2>
       <VolumeBackupPanel />
     </section>
 
@@ -98,6 +101,7 @@ import { RefreshCw, Trash2 } from 'lucide-vue-next';
 import { api } from '../api/client.js';
 import Skeleton from '../components/common/Skeleton.vue';
 import VolumeBackupPanel from '../components/resources/VolumeBackupPanel.vue';
+import FullBackupPlanPanel from '../components/resources/FullBackupPlanPanel.vue';
 import ConfirmDialog from '../components/common/ConfirmDialog.vue';
 
 const data = ref(null);
@@ -118,7 +122,7 @@ const tabs = [
   { key: 'images', label: '镜像', countKey: 'images' },
   { key: 'volumes', label: '卷', countKey: 'volumes' },
   { key: 'networks', label: '网络', countKey: 'networks' },
-  { key: 'backups', label: '卷备份', countKey: '__none__' },
+  { key: 'backups', label: '备份', countKey: '__none__' },
 ];
 const tabLabel = computed(() => tabs.find((t) => t.key === activeTab.value)?.label || '');
 

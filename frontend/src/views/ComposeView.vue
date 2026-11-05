@@ -184,6 +184,10 @@ import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution.js';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import YamlWorker from 'monaco-yaml/yaml.worker?worker';
 import { api } from '../api/client.js';
+import { useTheme } from '../lib/theme.js';
+
+const { resolvedTheme } = useTheme();
+watch(resolvedTheme, value => { if (editor) monaco.editor.setTheme(value === 'dark' ? 'vs-dark' : 'vs'); });
 
 self.MonacoEnvironment = { 
   getWorker: (moduleId, label) => {
@@ -386,7 +390,7 @@ watch(editorEl, (element, previous) => {
 
 function createEditor() {
   if (!editorEl.value || editor) return;
-  editor = monaco.editor.create(editorEl.value, { value: content.value, language: 'yaml', theme: 'vs-dark', automaticLayout: true, fontSize: 13, minimap: { enabled: false }, tabSize: 2, scrollBeyondLastLine: false });
+  editor = monaco.editor.create(editorEl.value, { value: content.value, language: 'yaml', theme: resolvedTheme.value === 'dark' ? 'vs-dark' : 'vs', automaticLayout: true, fontSize: 13, minimap: { enabled: false }, tabSize: 2, scrollBeyondLastLine: false });
   contentDisposable = editor.onDidChangeModelContent(() => {
     content.value = editor.getValue(); 
     message.value = ''; 

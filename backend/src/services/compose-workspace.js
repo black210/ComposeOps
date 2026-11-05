@@ -3,13 +3,14 @@ import { realpath } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import tar from 'tar-stream';
 import docker from './docker.js';
-import { ACTIONS, assertComposeVersion, replaceComposeWithBackup, withComposeFileLock } from './compose-runner.js';
+import { ACTIONS, composeProjectArgs, assertComposeVersion, replaceComposeWithBackup, withComposeFileLock } from './compose-runner.js';
 import { demuxStream } from '../lib/docker-streams.js';
 import { validateYaml } from '../lib/files.js';
 import { addComposeBackup } from '../lib/db.js';
 import { safeProjectMountPath } from './mount-plan.js';
 import { getActiveHost, getActiveHostType } from './docker-hosts.js';
 import { sshExec, sshReadFile, sshWriteFile } from './remote-shell.js';
+import { assertProjectOperationAllowed } from './project-operation-lock.js';
 
 let runnerImagePromise;
 const workspaceRunners = new Map();
@@ -182,6 +183,7 @@ async function acquireRunner(project) {
 }
 
 async function withRunner(project, callback) {
+  assertProjectOperationAllowed(project.id);
   const hostType = getActiveHostType();
   if (hostType === 'ssh') {
     try {
@@ -236,6 +238,22 @@ export async function closeAllWorkspaceRunners() {
   const entries = [...workspaceRunners.values()];
   for (const entry of entries) retireRunner(entry);
   await Promise.all(entries.map((entry) => destroyRunner(entry)));
+}
+
+/** 完整备份前只回收所选项目的空闲工作容器，不能强杀正在执行的命令。 */
+export async function closeIdleProjectRunners(projectIds, { waitMs = 0 } = {}) {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const entries = [...workspaceRunners.values()].filter((entry) => projectIds.includes(entry.projectId));
+    if (!entries.some((entry) => entry.active > 0)) {
+      for (const entry of entries) retireRunner(entry);
+      await Promise.all(entries.map((entry) => destroyRunner(entry)));
+      return;
+    }
+    if (Date.now() >= deadline)
+      throw Object.assign(new Error('所选应用有正在执行的工作区命令，请等待完成'), { statusCode: 409 });
+    await new Promise((resolve) => setTimeout(resolve, Math.min(100, deadline - Date.now())));
+  }
 }
 
 export function workspaceRunnerStats() {
@@ -434,17 +452,13 @@ export async function runWorkspaceComposeArgs(project, args, onOutput = () => {}
   const { files } = projectPaths(project);
   if (!Array.isArray(args) || !args.length) throw Object.assign(new Error('无效的 Compose 参数'), { statusCode: 400 });
   return withRunner(project, async (container) => {
-    const result = await execInRunner(container, ['docker', 'compose', ...files.flatMap((file) => ['-f', file]), ...args], { onOutput, onExec: options.onExec, timeoutMs: options.timeoutMs });
+    const result = await execInRunner(container, ['docker', 'compose', ...composeProjectArgs(project, files), ...args], { onOutput, onExec: options.onExec, timeoutMs: options.timeoutMs });
     return result.code;
   });
 }
 
 export async function runWorkspaceCompose(project, action, onOutput = () => {}, options = {}) {
-  const { files } = projectPaths(project);
   const actionArgs = ACTIONS[action];
   if (!actionArgs) throw Object.assign(new Error('不支持的 Compose 操作'), { statusCode: 400 });
-  return withRunner(project, async (container) => {
-    const result = await execInRunner(container, ['docker', 'compose', ...files.flatMap((file) => ['-f', file]), ...actionArgs], { onOutput, onExec: options.onExec, timeoutMs: options.timeoutMs });
-    return result.code;
-  });
+  return runWorkspaceComposeArgs(project, actionArgs, onOutput, options);
 }

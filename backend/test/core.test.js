@@ -55,13 +55,14 @@ test('compose actions map to fixed argument lists', () => {
 
 test('managed projects can control existing containers without Compose files', async () => {
   const calls = [];
+  const states = { one: 'running', two: 'exited' };
   const fakeDocker = {
     getContainer(id) {
       return {
-        async start() { calls.push(`start:${id}`); },
-        async restart() { calls.push(`restart:${id}`); },
-        async stop() { calls.push(`stop:${id}`); },
-        async inspect() { return { State: { Status: id === 'one' ? 'running' : 'exited' } }; },
+        async start() { calls.push(`start:${id}`); states[id] = 'running'; },
+        async restart() { calls.push(`restart:${id}`); states[id] = 'running'; },
+        async stop() { calls.push(`stop:${id}`); states[id] = 'exited'; },
+        async inspect() { return { State: { Status: states[id] } }; },
       };
     },
   };
@@ -75,7 +76,7 @@ test('managed projects can control existing containers without Compose files', a
   assert.deepEqual(calls, ['start:two']);
   assert.match(output.map((item) => item[1]).join(''), /web: 当前状态 running，无需启动/);
   await runContainerAction(project, 'restart', () => {}, fakeDocker);
-  assert.deepEqual(calls.slice(1), ['restart:one', 'start:two']);
+  assert.deepEqual(calls.slice(1), ['restart:one', 'restart:two']);
   await assert.rejects(runContainerAction(project, 'pull', () => {}, fakeDocker), /需要挂载/);
 });
 

@@ -56,6 +56,7 @@
     <section v-if="tab === 'personal'" class="settings-section">
       <h2 class="section-title">界面偏好</h2>
       <div class="ios-group">
+        <div class="ios-row"><div class="ios-row-main"><div class="ios-row-title">界面主题</div><div class="ios-row-desc">浅色、深色或跟随系统，切换后立即生效并保存在当前浏览器。</div></div><ThemeSelect /></div>
         <div class="ios-row"><div class="ios-row-main"><div class="ios-row-title">自动刷新间隔（秒）</div><div class="ios-row-desc">服务、监控等页面的轮询周期,最小 3 秒。</div></div><div class="ios-row-control"><input v-model.number="preferences.refreshInterval" type="number" min="3" max="300" class="input max-w-24! text-center" aria-label="自动刷新间隔（秒）" /></div></div>
         <div class="ios-row"><div class="ios-row-main"><div class="ios-row-title">日志默认行数</div><div class="ios-row-desc">打开日志页时默认拉取的行数,10–5000。</div></div><div class="ios-row-control"><input v-model.number="preferences.logTail" type="number" min="10" max="5000" class="input max-w-24! text-center" aria-label="日志默认行数" /></div></div>
       </div>
@@ -137,50 +138,27 @@
 
     <section v-if="tab === 'mounts'" class="settings-section">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div><h2 class="section-title">Compose 项目纳管</h2><p class="text-sm text-surface-400 mt-1">自动发现的项目默认没有操作权限，只有明确勾选并应用后才加入管理。</p></div>
+        <div><h2 class="section-title">项目目录</h2><p class="text-sm text-surface-400 mt-1">所有 Compose 项目自动管理，目录能力自动识别，无需选择或应用配置。</p></div>
         <button class="btn-secondary" :disabled="mountLoading" @click="loadMountPlan"><RefreshCw class="w-4 h-4" :class="{ 'animate-spin': mountLoading }" />重新扫描</button>
       </div>
-
-      <div v-if="mountPlan" class="grid sm:grid-cols-4 gap-2">
-        <StatCard title="已发现" :value="String(mountPlan.summary?.total || 0)" sub="Compose 项目" />
-        <StatCard title="已纳管" :value="String(mountPlan.summary?.managed || 0)" sub="由你明确授权" />
-        <StatCard title="Compose 就绪" :value="String(mountPlan.summary?.operable || 0)" sub="可编辑、拉取和创建" />
-        <StatCard title="已选 Compose" :value="String(mountPlan.projects.filter((project) => project.managed && project.mountEnabled).length)" sub="按需精确挂载" />
+      <div v-if="mountPlan" class="grid sm:grid-cols-3 gap-2">
+        <StatCard title="项目总数" :value="String(mountPlan.projects.length)" sub="自动发现与管理" />
+        <StatCard title="Compose 就绪" :value="String(mountPlan.projects.filter((project) => project.editable).length)" sub="支持配置编辑、拉取和重建" />
+        <StatCard title="仅容器操作" :value="String(mountPlan.projects.filter((project) => !project.editable).length)" sub="目录能力暂不可用" />
       </div>
-
       <div v-if="mountPlan" class="space-y-2">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div><h3 class="section-title">选择管理范围</h3><p class="text-xs text-surface-400 mt-1">第一项授权容器控制、日志、终端和 AI 诊断；第二项允许按需挂载该 Compose 目录，启用配置编辑、拉取和创建缺失服务。</p></div>
-          <button class="btn-primary" :disabled="mountLoading || !selectionDirty" @click="saveManagement"><ShieldCheck class="w-4 h-4" />应用选择</button>
-        </div>
-        <p v-if="selectionDirty" class="alert-warning">当前选择尚未应用；保存前不会改变项目权限或 Compose 目录范围。</p>
         <EmptyState v-if="!mountPlan.projects.length" icon="FolderCog" title="暂未发现 Compose 项目" description="重新扫描以发现新的 Docker Compose 项目" action-label="重新扫描" action-icon="RefreshCw" :action-disabled="mountLoading" @action="loadMountPlan" />
-        <div v-for="project in mountPlan.projects" :key="project.id" class="card p-3 flex items-start gap-3" :class="{ 'ring-1 ring-amber-500/70': highlightedProjectId === project.id }">
-          <div class="flex flex-col gap-2 pt-0.5">
-            <label class="toggle-label text-xs whitespace-nowrap" title="允许控制该项目的现有容器"><input v-model="selectedProjectIds" type="checkbox" :value="project.id" class="accent-accent" />纳管</label>
-            <label class="toggle-label text-xs whitespace-nowrap" :class="{ 'opacity-40 pointer-events-none': !selectedProjectIds.includes(project.id) }" title="选择后生成同路径目录挂载"><input v-model="selectedMountProjectIds" type="checkbox" :value="project.id" class="accent-accent" :disabled="!selectedProjectIds.includes(project.id)" />Compose</label>
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-2"><span class="font-mono text-sm">{{ project.projectName }}</span><span class="count-badge">{{ projectAccessLabel(project) }}</span><span class="count-badge">{{ project.containerCount }} 个容器</span></div>
-            <div class="text-muted font-mono break-all mt-1">{{ project.workingDir || 'Docker 标签未提供工作目录' }}</div>
-          </div>
-        </div>
-      </div>
-
-      <p v-if="mountPlan?.projects.some((project) => project.editable)" class="alert-success">已勾选的 Compose 项目会按需创建临时工作容器，只挂载对应目录；短时间内切换会复用，空闲约 90 秒后自动销毁，无需重建面板。</p>
-
-      <div v-if="mountPlan?.unsupportedProjects.length" class="space-y-2">
-        <h3 class="section-title">已纳管但无法自动规划</h3>
-        <div v-for="project in mountPlan.unsupportedProjects" :key="project.id" class="alert-warning">
-          <span class="font-mono">{{ project.projectName }}</span>：
-          Docker Compose 标签缺少安全的项目绝对路径。请在独立项目目录中使用较新的 <code class="font-mono">docker compose up -d</code> 重新创建该项目。
+        <div v-for="project in mountPlan.projects" :key="project.id" class="card p-3 min-w-0" :class="{ 'ring-1 ring-amber-500/70': highlightedProjectId === project.id }">
+          <div class="flex flex-wrap items-center gap-2"><span class="font-mono break-all">{{ project.projectName }}</span><span class="text-xs" :class="project.editable ? 'text-emerald-300' : 'text-amber-300'">{{ projectAccessLabel(project) }}</span></div>
+          <p class="mt-1 text-xs font-mono text-surface-500 break-all">{{ project.workingDir || '未提供项目目录' }}</p>
+          <p v-if="!project.editable" class="mt-2 text-xs text-surface-400">{{ projectDirectoryHint(project) }}</p>
         </div>
       </div>
     </section>
 
     <section v-if="tab === 'hosts'" class="settings-section">
       <div class="flex items-center justify-between gap-3">
-        <div><h2 class="section-title">Docker 节点纳管</h2><p class="text-sm text-surface-400 mt-1">添加远程 Docker 主机(Local/TCP/SSH),全局切换后所有项目、日志与指标跟随目标节点。</p></div>
+        <div><h2 class="section-title">Docker 节点</h2><p class="text-sm text-surface-400 mt-1">添加远程 Docker 主机(Local/TCP/SSH),全局切换后所有项目、日志与指标跟随目标节点。</p></div>
         <button class="btn-primary" @click="openHostEditor()"><Server class="w-4 h-4" />添加远程主机</button>
       </div>
       <div class="grid gap-3 sm:grid-cols-2">
@@ -235,7 +213,6 @@
     </BaseModal>
     <StoragePruneModal v-if="storageModal" @close="storageModal = false" @reclaimed="loadUsage" />
     <ConfirmDialog :show="!!removeHostTarget" title="删除 Docker 节点" :message="`确认删除节点 ${removeHostTarget?.name || ''}?删除后不会影响远程主机本身。`" tone="danger" confirm-text="删除节点" @confirm="confirmRemoveHost" @cancel="removeHostTarget = null" />
-    <ConfirmDialog :show="managementConfirm" title="取消项目纳管" :message="`将取消 ${removedProjectCount} 个项目的管理权限,相关控制与编辑入口会立即关闭。确认继续?`" tone="warning" confirm-text="确认应用" @confirm="confirmSaveManagement" @cancel="managementConfirm = false" />
     <section v-if="tab === 'mcp'" class="settings-section space-y-4">
       <div class="flex items-center justify-between">
         <div><h2 class="section-title">MCP 服务</h2><p class="mt-1 text-sm text-surface-400">把面板的运维工具通过 MCP 协议暴露给 Claude Desktop、Cursor 等客户端</p></div>
@@ -296,7 +273,8 @@ import ConfirmDialog from '../components/common/ConfirmDialog.vue';
 import BaseModal from '../components/common/BaseModal.vue';
 import AiChannelsPanel from '../components/settings/AiChannelsPanel.vue';
 import AgentPoliciesPanel from '../components/settings/AgentPoliciesPanel.vue';
-const tabs = [{ id: 'ai', label: 'AI', icon: markRaw(Bot) }, { id: 'agent-policy', label: 'Agent 策略', icon: markRaw(ShieldCheck) }, { id: 'personal', label: '偏好', icon: markRaw(SlidersHorizontal) }, { id: 'notifications', label: '通知', icon: markRaw(Bell) }, { id: 'maintenance', label: '维护', icon: markRaw(Wrench) }, { id: 'mounts', label: '项目纳管', icon: markRaw(FolderCog) }, { id: 'hosts', label: 'Docker 节点', icon: markRaw(Server) }, { id: 'mcp', label: 'MCP', icon: markRaw(Plug) }, { id: 'about', label: '关于', icon: markRaw(Info) }];
+import ThemeSelect from '../components/common/ThemeSelect.vue';
+const tabs = [{ id: 'ai', label: 'AI', icon: markRaw(Bot) }, { id: 'agent-policy', label: 'Agent 策略', icon: markRaw(ShieldCheck) }, { id: 'personal', label: '偏好', icon: markRaw(SlidersHorizontal) }, { id: 'notifications', label: '通知', icon: markRaw(Bell) }, { id: 'maintenance', label: '维护', icon: markRaw(Wrench) }, { id: 'mounts', label: '项目目录', icon: markRaw(FolderCog) }, { id: 'hosts', label: 'Docker 节点', icon: markRaw(Server) }, { id: 'mcp', label: 'MCP', icon: markRaw(Plug) }, { id: 'about', label: '关于', icon: markRaw(Info) }];
 const route = useRoute();
 const router = useRouter();
 const initialTab = tabs.some((item) => item.id === route.query.tab) ? route.query.tab : 'ai';
@@ -304,23 +282,10 @@ const tab = ref(initialTab); const message = ref(''); const error = ref(''); con
 const mountPlan = ref(null); const mountLoading = ref(false); const highlightedProjectId = computed(() => String(route.query.projectId || ''));
 const hostEditor = ref(null); const savingHost = ref(false); const savingPreferences = ref(false); const changingPassword = ref(false); const savingNotifications = ref(false); const testingNotifications = ref(false); const savingUpdates = ref(false);
 const removeHostTarget = ref(null);
-const managementConfirm = ref(false);
-const removedProjectCount = computed(() => savedManagedProjectIds.value.filter((id) => !selectedProjectIds.value.includes(id)).length);
 const updateSummary = computed(() => ({ total: updateResults.value.length, updated: updateResults.value.filter((item) => item.status === 'updated').length, failed: updateResults.value.filter((item) => item.status === 'failed').length }));
 const usageTotal = computed(() => Number(usage.value?.total) || 0);
 const usageReclaimable = computed(() => Number(usage.value?.reclaimable) || 0);
 const usagePercent = computed(() => (usage.value?.total && usage.value?.disk?.free ? Math.min(100, Math.max(2, (usage.value.total / (usage.value.total + usage.value.disk.free)) * 100)) : 2) + '%');
-const selectedProjectIds = ref([]); const savedManagedProjectIds = ref([]);
-const selectedMountProjectIds = ref([]); const savedMountProjectIds = ref([]);
-const managementDirty = computed(() => {
-  const selected = [...selectedProjectIds.value].sort(); const saved = [...savedManagedProjectIds.value].sort();
-  return selected.length !== saved.length || selected.some((id, index) => id !== saved[index]);
-});
-const mountsDirty = computed(() => {
-  const selected = [...selectedMountProjectIds.value].sort(); const saved = [...savedMountProjectIds.value].sort();
-  return selected.length !== saved.length || selected.some((id, index) => id !== saved[index]);
-});
-const selectionDirty = computed(() => managementDirty.value || mountsDirty.value);
 function ok(text) { message.value = text; error.value = ''; } function fail(e) { error.value = e.message; message.value = ''; }
 function applyAiConfig(cfg) {
   ai.value = { channels: (cfg.channels || []).map((item) => ({ ...item, apiKey: '', saved: true, dirty: false })),
@@ -537,31 +502,14 @@ async function testNotifications() { if (testingNotifications.value) return; tes
 async function saveUpdates() { if (savingUpdates.value) return; try { if (!Number.isInteger(Number(updates.value.intervalHours)) || Number(updates.value.intervalHours) < 1 || Number(updates.value.intervalHours) > 720) throw new Error('镜像检查间隔必须是 1–720 小时的整数'); savingUpdates.value = true; updates.value = await api.saveUpdateSettings(updates.value); ok('更新策略已保存'); } catch (e) { fail(e); } finally { savingUpdates.value = false; } }
 async function checkUpdates() { checkingUpdates.value = true; try { updateResults.value = (await api.checkUpdates()).results; updates.value.lastCheck = Date.now(); updates.value.lastResults = updateResults.value; ok('镜像检查完成'); } catch (e) { fail(e); } finally { checkingUpdates.value = false; } }
 async function loadUsage() { try { usage.value = await api.getStorageDf(); } catch (e) { fail(e); } }
-function applyMountPlan(plan) {
-  mountPlan.value = plan;
-  savedManagedProjectIds.value = plan.projects.filter((project) => project.managed).map((project) => project.id);
-  savedMountProjectIds.value = plan.projects.filter((project) => project.managed && project.mountEnabled).map((project) => project.id);
-  selectedProjectIds.value = [...savedManagedProjectIds.value];
-  selectedMountProjectIds.value = [...savedMountProjectIds.value];
+function applyMountPlan(plan) { mountPlan.value = plan; }
+async function loadMountPlan() { mountLoading.value = true; try { applyMountPlan(await api.getMountPlan()); ok('项目目录状态已重新扫描'); } catch (e) { fail(e); } finally { mountLoading.value = false; } }
+function projectAccessLabel(project) { return project.editable ? (project.mounted ? 'Compose 直连' : 'Compose 按需') : '仅容器操作'; }
+function projectDirectoryHint(project) {
+  if (project.mountState === 'remote_api_only') return '当前节点只有 Docker API，配置编辑需要 SSH 连接。容器启停、日志和终端可直接使用。';
+  if (!project.workingDir) return 'Docker 标签未提供项目目录，暂时无法读取 Compose 配置。';
+  return '项目目录缺失、配置路径失效或目录范围过宽，暂时无法读取 Compose 配置。容器操作仍可用。';
 }
-async function loadMountPlan() { mountLoading.value = true; try { applyMountPlan(await api.getMountPlan()); ok('项目与权限状态已重新扫描'); } catch (e) { fail(e); } finally { mountLoading.value = false; } }
-async function saveManagement() {
-  if (removedProjectCount.value) { managementConfirm.value = true; return; }
-  await confirmSaveManagement();
-}
-async function confirmSaveManagement() {
-  managementConfirm.value = false;
-  mountLoading.value = true;
-  try {
-    selectedMountProjectIds.value = selectedMountProjectIds.value.filter((id) => selectedProjectIds.value.includes(id));
-    await api.saveProjectManagement(selectedProjectIds.value, selectedMountProjectIds.value);
-    applyMountPlan(await api.getMountPlan());
-    window.dispatchEvent(new CustomEvent('composeops:projects-changed'));
-    ok('管理与 Compose 目录选择已更新');
-  }
-  catch (e) { fail(e); } finally { mountLoading.value = false; }
-}
-function projectAccessLabel(project) { if (!project.managed) return '未纳管'; if (!project.mountEnabled) return '仅管理容器'; if (project.editable) return project.mounted ? 'Compose 直连' : 'Compose 按需'; return 'Compose 路径需处理'; }
 function imageStatusLabel(status) { return ({ updated: '发现更新（尚未下载）', current: '已是最新', failed: '检查失败', not_downloaded: '本地未下载', local_build: '本地构建', local_only: '仅用本地镜像', needs_policy: '需要明确拉取策略', pinned: '固定 digest', unresolved: '镜像变量未解析', unknown: '无法比较摘要', unsupported: '不支持检查' })[status] || status; }
 function formatBytes(value = 0) { const units = ['B','KB','MB','GB','TB']; let n = value; let i = 0; while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; } return `${n.toFixed(i ? 1 : 0)} ${units[i]}`; }
 function setTab(next) {
@@ -573,5 +521,4 @@ function setTab(next) {
   if (next === 'mcp') loadMcp();
 }
 watch(() => route.query.tab, (value) => { tab.value = tabs.some((item) => item.id === value) ? value : 'ai'; });
-watch(selectedProjectIds, (ids) => { selectedMountProjectIds.value = selectedMountProjectIds.value.filter((id) => ids.includes(id)); }, { deep: true });
 </script>

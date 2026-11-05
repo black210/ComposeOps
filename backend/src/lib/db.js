@@ -638,6 +638,32 @@ const MIGRATIONS = [
       }
     },
   },
+  {
+    version: 19,
+    name: 'project_credentials',
+    up(database) {
+      database.exec(`CREATE TABLE IF NOT EXISTS project_credentials (
+        host_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 0,
+        entries_json TEXT NOT NULL DEFAULT '[]',
+        PRIMARY KEY(host_id, project_id)
+      )`);
+    },
+  },
+  {
+    version: 20,
+    name: 'project_webui_settings',
+    up(database) {
+      database.exec(`CREATE TABLE IF NOT EXISTS project_webui_settings (
+        host_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 0,
+        entries_json TEXT NOT NULL DEFAULT '[]',
+        PRIMARY KEY(host_id, project_id)
+      )`);
+    },
+  },
 ];
 
 /** 幂等加列:列已存在时直接返回 false,不抛错。 */
@@ -1319,6 +1345,7 @@ export function setProjectPreference(projectId, { managed, mountEnabled, favorit
   return { managed: !!nextManaged, favorite: !!nextFavorite, note: nextNote };
 }
 
+// 历史配置导入/兼容数据保留；运行时不再读取这些白名单标志来授权项目。
 export function setProjectManagement(discoveredProjectIds, managedProjectIds, mountProjectIds = null) {
   const managedSet = new Set(managedProjectIds);
   const mountSet = new Set(mountProjectIds || []);

@@ -24,3 +24,5 @@ README.md
 **/playwright-report
 **/test-results
 backend/data/snapshots
+backend/data/maintenance
+backend/data/full-backups

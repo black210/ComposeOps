@@ -6,7 +6,7 @@ import { deployBlueprint, listBlueprints } from '../app-blueprints.js';
 export function registerContextTools(agent) {
   agent
     .registerTool('project.list_managed', {
-      description: '列出当前用户已经纳管且有权限操作的项目及其能力',
+      description: '列出当前节点自动发现的全部 Compose 项目及其目录能力',
       category: 'context',
       requiredPermission: 'readonly',
       confirmationRequired: false,

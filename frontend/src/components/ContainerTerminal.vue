@@ -31,6 +31,9 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
+import { useTerminalTheme } from '../lib/theme.js';
+
+const terminalTheme = useTerminalTheme();
 
 const props = defineProps({
   projectId: { type: String, required: true },
@@ -49,6 +52,7 @@ const connectionMessage = ref('终端未连接');
 let terminal = null;
 let fitAddon = null;
 let ws = null;
+watch(terminalTheme, value => { if (terminal) terminal.options.theme = value; });
 
 onMounted(() => {
   initTerminal();
@@ -72,27 +76,7 @@ function initTerminal() {
     cursorBlink: true,
     fontSize: 14,
     fontFamily: '"Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace',
-    theme: {
-      background: '#0A0D12',
-      foreground: '#E5E7EB',
-      cursor: '#38BDF8',
-      black: '#0F131C',
-      red: '#EF4444',
-      green: '#6EE7B7',
-      yellow: '#E9A568',
-      blue: '#38BDF8',
-      magenta: '#A78BFA',
-      cyan: '#22D3EE',
-      white: '#F3F4F6',
-      brightBlack: '#4B5563',
-      brightRed: '#F87171',
-      brightGreen: '#86EFAC',
-      brightYellow: '#FCD34D',
-      brightBlue: '#60A5FA',
-      brightMagenta: '#C4B5FD',
-      brightCyan: '#67E8F9',
-      brightWhite: '#FFFFFF',
-    },
+    theme: terminalTheme.value,
     scrollback: 10000,
     convertEol: true,
     // xterm 内置屏幕阅读器模式将终端行暴露为可读 DOM,而非仅依赖 canvas。
@@ -216,7 +200,7 @@ function cleanup() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #0A0D12;
+  background: var(--panel-deep);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -226,8 +210,8 @@ function cleanup() {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: #0F131C;
-  border-bottom: 1px solid #1E2636;
+  background: var(--panel-deep);
+  border-bottom: 1px solid var(--fill-shape-2);
 }
 
 .header-left {
@@ -237,20 +221,20 @@ function cleanup() {
 }
 
 .terminal-icon {
-  color: #6EE7B7;
+  color: var(--ok-soft);
   font-size: 14px;
 }
 
 .terminal-title {
-  color: #F3F4F6;
+  color: var(--text-bright);
   font-size: 14px;
   font-weight: 500;
 }
 
 .shell-indicator {
   padding: 2px 8px;
-  background: #1E2636;
-  color: #9CA3AF;
+  background: var(--fill-shape-2);
+  color: var(--text-soft);
   font-size: 12px;
   border-radius: 4px;
   font-family: monospace;
@@ -273,12 +257,12 @@ function cleanup() {
 }
 
 .btn-connect {
-  background: #38BDF8;
-  color: #0A0D12;
+  background: var(--cyan-strong);
+  color: var(--on-accent);
 }
 
 .btn-connect:hover:not(:disabled) {
-  background: #0EA5E9;
+  background: var(--cyan-deep);
 }
 
 .btn-connect:disabled {
@@ -287,12 +271,12 @@ function cleanup() {
 }
 
 .btn-disconnect {
-  background: #EF4444;
+  background: var(--danger);
   color: white;
 }
 
 .btn-disconnect:hover {
-  background: #DC2626;
+  background: var(--danger-deep);
 }
 
 .terminal-container {
@@ -305,7 +289,7 @@ function cleanup() {
   padding: 12px 16px;
   background: rgba(239, 68, 68, 0.1);
   border-top: 1px solid rgba(239, 68, 68, 0.2);
-  color: #EF4444;
+  color: var(--danger);
   font-size: 13px;
 }
 </style>

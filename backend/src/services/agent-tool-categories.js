@@ -15,7 +15,7 @@ import { getActivityDocker } from './docker-hosts.js';
 export const TOOL_CATEGORIES = {
   context: {
     label: '上下文与资料',
-    description: '发现已纳管项目和可选的联网资料检索',
+    description: '发现当前节点的全部项目和可选的联网资料检索',
     icon: 'globe',
     risk: 'low',
     tools: ['project.list_managed', 'web.search', 'app.list', 'skill.list', 'skill.use']

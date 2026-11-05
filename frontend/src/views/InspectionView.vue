@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">AI 巡检中心</h1>
-        <p class="page-subtitle">只读巡检容器状态、磁盘、内存、备份时效与项目纳管,输出结论与建议,不执行任何变更</p>
+        <p class="page-subtitle">只读巡检容器状态、磁盘、内存、备份时效与项目目录,输出结论与建议,不执行任何变更</p>
       </div>
       <div class="page-actions">
         <button class="btn-secondary" :disabled="loading" @click="load">

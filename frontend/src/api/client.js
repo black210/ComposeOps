@@ -115,6 +115,19 @@ export function bumpHostEpoch() {
 }
 
 export const api = {
+  getMaintenance: () => request('/maintenance/', { force: true }),
+  saveImageCheckSettings: (payload) => request('/maintenance/image-check/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+  testImageCheckProxy: (payload) => request('/maintenance/image-check/test', { method: 'POST', body: JSON.stringify(payload) }),
+  saveMaintenanceSettings: (backupPath) => request('/maintenance/settings', { method: 'PUT', body: JSON.stringify({ backupPath }) }),
+  prepareMaintenance: (payload) => request('/maintenance/plans', { method: 'POST', body: JSON.stringify(payload) }),
+  executeMaintenance: (payload) => request('/maintenance/execute', { method: 'POST', body: JSON.stringify(payload) }),
+  recoverMaintenanceTask: (id) => request(`/maintenance/tasks/${encodeURIComponent(id)}/recover`, { method: 'POST', body: JSON.stringify({ confirmed: true }) }),
+  getSyncTargets: () => request('/maintenance/targets', { force: true }),
+  saveSyncTarget: (payload) => request('/maintenance/targets', { method: 'POST', body: JSON.stringify(payload) }),
+  setSyncAutomatic: (id, auto) => request(`/maintenance/targets/${encodeURIComponent(id)}/auto`, { method: 'PUT', body: JSON.stringify({ auto }) }),
+  startBackupSync: (payload) => request('/maintenance/sync', { method: 'POST', body: JSON.stringify(payload) }),
+  authorize115: (targetId) => request('/maintenance/115/authorize', { method: 'POST', body: JSON.stringify({ targetId }) }),
+  pollAuthorize115: (id) => request(`/maintenance/115/authorize/${encodeURIComponent(id)}/poll`, { method: 'POST' }),
   getAuthStatus: () => request('/auth/status'),
   // setupToken:服务端设置 SETUP_TOKEN 环境变量时,首次初始化必须携带该引导令牌
   setup: (password, setupToken = '') => request('/auth/setup', { method: 'POST', body: JSON.stringify({ password, setupToken }) }),
@@ -123,8 +136,6 @@ export const api = {
   changePassword: (payload) => request('/auth/password', { method: 'POST', body: JSON.stringify(payload) }),
   getProjects: (force = false) => request('/projects', { force }),
   getMountPlan: async () => normalizeMountPlan(await request('/projects/mount-plan')),
-  saveProjectManagement: (projectIds, mountProjectIds = []) => request('/projects/management', { method: 'PUT', body: JSON.stringify({ projectIds, mountProjectIds }) }),
-  saveProjectMounts: (projectIds) => request('/projects/mounts', { method: 'PUT', body: JSON.stringify({ projectIds }) }),
   getProject: (id) => request(`/projects/${id}`),
   getProjectActivity: (id) => request(`/projects/${id}/activity`),
   listJobs: async (limit = 20) => normalizeJobsResponse(await request(`/jobs?limit=${limit}`, { cacheable: true })),
@@ -177,8 +188,12 @@ export const api = {
   setActiveHost: (hostId) => request('/hosts/active', { method: 'PUT', body: JSON.stringify({ hostId }) }),
   getActiveHost: () => request('/hosts/active'),
   // image update radar
-  getProjectUpdates: (projectId, force = false) => request(`/projects/${projectId}/updates?force=${force ? '1' : '0'}`),
-  getProjectWebUi: (projectId) => request(`/projects/${projectId}/webui`),
+  getProjectUpdates: (projectId, force = false, options = {}) => request(`/projects/${projectId}/updates?force=${force ? '1' : '0'}`, options),
+  getProjectWebUi: (projectId) => request(`/projects/${projectId}/webui`, { cache: 'no-store' }),
+  getProjectWebUiSettings: (projectId) => request(`/projects/${projectId}/webui-settings`, { cache: 'no-store' }),
+  saveProjectWebUiSettings: (projectId, payload) => request(`/projects/${projectId}/webui-settings`, { method: 'PUT', body: JSON.stringify(payload) }),
+  getProjectCredentials: (projectId) => request(`/projects/${projectId}/credentials`, { cache: 'no-store' }),
+  saveProjectCredentials: (projectId, payload) => request(`/projects/${projectId}/credentials`, { method: 'PUT', body: JSON.stringify(payload) }),
   listDbDumpTargets: (projectId) => request(`/projects/${projectId}/db-dump`),
   listCronJobs: () => request('/cron'),
   createCronJob: (payload) => request('/cron', { method: 'POST', body: JSON.stringify(payload) }),
@@ -210,6 +225,7 @@ export const api = {
   pruneStorage: (mode, confirm) => request('/ops/storage/prune', { method: 'POST', body: JSON.stringify({ mode, confirm }) }),
   getStorageResources: (force = false) => request('/ops/storage/resources', { force }),
   getProjectVolumes: (projectId) => request(`/ops/storage/volume-volumes?projectId=${encodeURIComponent(projectId)}`),
+  getFullBackupPlan: (projectId) => request(`/ops/storage/full-backup-plan?projectId=${encodeURIComponent(projectId)}`, { force: true }),
   getVolumeBackups: (projectId = '') => request(`/ops/storage/volume-backups${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
   createVolumeBackup: (projectId, volume) => request('/ops/storage/volume-backups', { method: 'POST', body: JSON.stringify({ projectId, volume }) }),
   restoreVolumeBackup: (id) => request(`/ops/storage/volume-backups/${id}/restore`, { method: 'POST' }),
@@ -366,21 +382,31 @@ export async function streamComposeControl(projectId, action, onFrame, path = nu
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const parts = buf.split('\n\n');
-    buf = parts.pop();
-    for (const part of parts) {
-      const line = part.trim();
-      if (!line.startsWith('data:')) continue;
-      try {
-        onFrame(JSON.parse(line.slice(5).trim()));
-      } catch {
-        // 跳过无法解析的控制流帧,让连接继续接收后续事件。
-      }
+  let exited = false;
+  const consume = (part) => {
+    const line = part.trim();
+    if (!line.startsWith('data:')) return;
+    let frame;
+    try { frame = JSON.parse(line.slice(5).trim()); } catch { return; }
+    if (frame.type === 'exit' && Number.isInteger(frame.data?.code)) exited = true;
+    onFrame(frame);
+  };
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) consume(part);
     }
+    buf += decoder.decode();
+    if (buf.trim()) consume(buf);
+    if (!exited) throw new Error('操作连接已中断，未收到执行结果，请检查容器实际状态后重试');
+  } finally {
+    // 执行期间可能已读取过中间状态，结束后必须再次失效。
+    invalidateSwr('/projects');
+    reader.releaseLock();
   }
 }
 

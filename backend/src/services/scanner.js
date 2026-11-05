@@ -1,9 +1,11 @@
 import { access } from 'fs/promises';
 import path from 'node:path';
 import { getActiveHostType, getActivityDocker } from './docker-hosts.js';
-import { getProjectMountEnabled, getProjectPreference } from '../lib/db.js';
+import { getProjectPreference } from '../lib/db.js';
 import { safeProjectMountPath } from './mount-plan.js';
 import { composeProjectId } from './project-id.js';
+import { extractHostPorts } from './project-ports.js';
+import { readNpsPorts } from './nps-ports.js';
 
 const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
 const COMPOSE_WORKDIR_LABEL = 'com.docker.compose.project.working_dir';
@@ -33,7 +35,7 @@ async function isReachable(p) {
  * Owner 来源：myops.owner 标签，缺失归类为 Uncategorized。
  *
  * 权限：所有项目先自动发现。本地已挂载或 SSH 节点上路径安全时 editable=true。
- * 仅有 Docker API 的 TCP 节点不能编辑远端 Compose 文件。未纳管项目不能操作。
+ * 仅有 Docker API 的 TCP 节点不能编辑远端 Compose 文件。全部发现的项目自动管理，目录能力由节点与项目路径决定。
  *
  * @returns {Promise<{owners: string[], groupedByOwner: Object}>}
  */
@@ -59,6 +61,48 @@ function parseComposeFiles(raw, workingDir) {
   return files.length ? files : (workingDir ? [`${workingDir}/docker-compose.yml`] : []);
 }
 
+function runtimeTimestamp(value) {
+  if (typeof value !== 'string') return null;
+  const timestamp = Date.parse(value);
+  // Docker 未启动/未停止时使用 0001-01-01，不能当成真实运行时间。
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
+}
+
+async function readRuntimeDetails(containers, docker) {
+  let next = 0;
+  // 每轮扫描最多 6 个 inspect；复用同一次读取提取主机网络端口。
+  await Promise.all(Array.from({ length: Math.min(6, containers.length) }, async () => {
+    while (next < containers.length) {
+      const container = containers[next++];
+      try {
+        const target = docker.getContainer(container.id);
+        const details = await target.inspect();
+        const state = details.State || {};
+        container.startedAt = runtimeTimestamp(state.StartedAt);
+        container.stoppedAt = runtimeTimestamp(state.FinishedAt);
+        if (state.Status) container.state = state.Status;
+        if (state.Health?.Status) container.health = state.Health.Status;
+        // 显示实际镜像引用；Compose 的目标镜像需重建后才生效。
+        if (details.Config?.Image) container.image = details.Config.Image;
+        if (details.Image) container.imageId = details.Image;
+        if (container.networkMode === 'host') {
+          container.hostPorts = extractHostPorts(details);
+          // NPS 把端口写在挂载配置中；只读固定文件，并在原 inspect 并发限制内完成。
+          const configured = await readNpsPorts(target, details);
+          if (configured.length) {
+            const ports = new Map(container.hostPorts.map(port => [`${port.port}/${port.type}`, port]));
+            for (const port of configured) ports.set(`${port.port}/${port.type}`, port);
+            container.hostPorts = [...ports.values()];
+          }
+        }
+      } catch {
+        // 容器可能已被回收或暂时无法 inspect；保留列表状态，时间保持未知。
+        // 不能用 Created 或 Status 文本猜测最后一次启动/停止时间。
+      }
+    }
+  }));
+}
+
 // 短 TTL 缓存:scanProjects 是几乎所有 /projects/:id/* 请求、WS 日志与 Agent 工具的
 // 入口,每次都是"全容器列表 + 逐项目可达性探测";Docker
 // 事件(尤其 health_status 抖动)还会逐事件再触发。3 秒内复用同一份快照足以削峰,
@@ -68,17 +112,18 @@ let scanCache = { client: null, at: 0, data: null };
 let scanInFlight = null;
 
 function projectSnapshot(data) {
-  // 权限和个人偏好不缓存,授权/撤销必须在下一次访问时立即生效。
+  // 个人偏好不缓存；旧数据库的纳管/目录选择不再决定项目能力。
   return structuredClone(data).map(project => {
     const preference = getProjectPreference(project.id);
-    project.managed = !!preference.managed;
-    project.mountEnabled = getProjectMountEnabled(project.id);
-    project.editable = project.managed && project.mountEnabled && (project.mounted || project.workspaceAvailable);
+    // 保留 managed/mountEnabled 响应字段供既有工具与客户端兼容，所有项目自动可操作。
+    project.managed = true;
+    project.mountEnabled = !!project.workspaceAvailable;
+    project.editable = project.mountEnabled;
     project.composeMode = project.editable ? (project.mounted ? 'direct' : 'workspace') : 'containers';
     project.favorite = !!preference.favorite;
     project.note = preference.note || '';
     return project;
-  }).sort((a, b) => Number(b.managed) - Number(a.managed) || Number(b.favorite) - Number(a.favorite) ||
+  }).sort((a, b) => Number(b.favorite) - Number(a.favorite) ||
     a.owner.localeCompare(b.owner) || a.projectName.localeCompare(b.projectName));
 }
 
@@ -134,6 +179,7 @@ async function scanProjectsUncached(activeDocker, nodeType) {
       projects.set(key, {
         id: composeProjectId(workingDir, projectName),
         projectName,
+        displayName: workingDir ? projectName : '未知容器',
         owner,
         workingDir,
         composeFiles,
@@ -143,12 +189,11 @@ async function scanProjectsUncached(activeDocker, nodeType) {
     }
 
     const project = projects.get(key);
-    const started = Number(c.Created || 0) * 1000;
-    const statusMatch = /\((\d+) days?\)/.exec(c.Status || '');
-    const stopped = statusMatch ? Date.now() - Number(statusMatch[1]) * 86400000 : null;
     project.containers.push({
       id: c.Id,
       name: (c.Names[0] || '').replace(/^\//, ''),
+      service: labels['com.docker.compose.service'] || '',
+      networkMode: c.HostConfig?.NetworkMode || '',
       state: c.State,
       statusText: c.Status,
       image: c.Image,
@@ -156,9 +201,10 @@ async function scanProjectsUncached(activeDocker, nodeType) {
       // Docker 列表 API 的 Mounts 包含 named/anonymous volume 引用；保留它们供 CMDB 建立血缘关系。
       volumes: (c.Mounts || []).filter((mount) => mount?.Type === 'volume' && mount?.Name).map((mount) => mount.Name),
       created: c.Created,
-      startedAt: started || null,
-      stoppedAt: stopped,
+      startedAt: null,
+      stoppedAt: null,
       health: /\((healthy|unhealthy|starting)\)/.exec(c.Status || '')?.[1] || null,
+      ...(c.HostConfig?.NetworkMode === 'host' ? { hostPorts: [] } : {}),
       ports: (c.Ports || []).filter((port) => port.PublicPort).map((port) => ({
         private: port.PrivatePort,
         public: port.PublicPort,
@@ -167,6 +213,8 @@ async function scanProjectsUncached(activeDocker, nodeType) {
       })),
     });
   }
+
+  await readRuntimeDetails([...projects.values()].flatMap(project => project.containers), activeDocker);
 
   // 计算每个 project 的状态：running | stopped | partial + 可达性检查
   for (const project of projects.values()) {

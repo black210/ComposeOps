@@ -474,26 +474,26 @@ watch(selectedMetric, () => { if (containerId.value) void loadMetrics(); });
 
 .metric-card {
   padding: 1rem;
-  background: #09090b;
-  border: 1px solid #27272a;
+  background: var(--ui-canvas);
+  border: 1px solid var(--line-strong);
   border-radius: 0.75rem;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .metric-card:hover {
-  border-color: #3f3f46;
-  background: #18181b;
+  border-color: var(--line-hover);
+  background: var(--canvas-mid-2);
 }
 
 .metric-card-active {
-  border-color: #10b981;
+  border-color: var(--ok);
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(6, 182, 212, 0.05));
 }
 
 .chart-container {
   height: 300px;
-  background: #09090b;
+  background: var(--ui-canvas);
   border-radius: 0.5rem;
   padding: 1rem;
 }
@@ -512,8 +512,8 @@ watch(selectedMetric, () => { if (containerId.value) void loadMetrics(); });
 .modal-content {
   width: 100%;
   max-width: 28rem;
-  background: #18181b;
-  border: 1px solid #27272a;
+  background: var(--canvas-mid-2);
+  border: 1px solid var(--line-strong);
   border-radius: 0.75rem;
   padding: 1.5rem;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);

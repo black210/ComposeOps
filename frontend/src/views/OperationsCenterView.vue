@@ -1,6 +1,6 @@
 <template>
   <div class="page-shell" :aria-busy="loading">
-    <div class="page-header">
+    <div v-if="!embedded" class="page-header">
       <div>
         <h1 class="page-title">运维任务中心</h1>
         <p class="page-subtitle">把备份、镜像更新与 AI 巡检组合成可复用的定时运维计划</p>
@@ -169,6 +169,8 @@ import { Bot, FileText, RefreshCw, Rocket, Sparkles, Square } from 'lucide-vue-n
 import ConfirmDialog from '../components/common/ConfirmDialog.vue';
 import { api } from '../api/client.js';
 import { useServicesStore } from '../stores/services.js';
+
+defineProps({ embedded: { type: Boolean, default: false } });
 
 const store = useServicesStore();
 const loading = ref(false);

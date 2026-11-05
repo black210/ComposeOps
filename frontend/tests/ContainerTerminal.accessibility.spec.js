@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import ContainerTerminal from '../src/components/ContainerTerminal.vue';
+import { setTheme } from '../src/lib/theme.js';
 
 const terminalInstances = vi.hoisted(() => []);
 const sockets = vi.hoisted(() => []);
@@ -29,6 +30,18 @@ afterEach(() => {
 });
 
 describe('容器终端可访问性', () => {
+  it('切换主题只更新当前终端色板，不新建终端或连接', async () => {
+    wrapper = mount(ContainerTerminal, { props: { projectId: 'p1', containerId: 'c1' } });
+    const terminal = terminalInstances[0];
+    setTheme('light');
+    await flushPromises();
+    expect(terminal.options.theme.background).toBe('#ffffff');
+    setTheme('dark');
+    await flushPromises();
+    expect(terminal.options.theme.background).toBe('#0b0d10');
+    expect(terminalInstances).toHaveLength(1);
+    expect(sockets).toHaveLength(0);
+  });
   it('启用 xterm 屏幕阅读器模式，并为终端区域命名', () => {
     wrapper = mount(ContainerTerminal, {
       props: { projectId: 'p1', containerId: 'c1', containerName: 'api-worker', shell: 'bash' },

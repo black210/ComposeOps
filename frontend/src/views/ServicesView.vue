@@ -1,7 +1,7 @@
 <template>
   <div class="page-shell">
     <div class="page-header">
-      <div><h1 class="page-title">服务总览</h1><p class="page-subtitle">自动发现 {{ store.projects.length }} 个项目 · 已纳管 {{ managedCount }} 个 · {{ containerCount }} 个容器</p></div>
+      <div><h1 class="page-title">服务总览</h1><p class="page-subtitle">自动发现 {{ store.projects.length }} 个项目 · {{ containerCount }} 个容器</p></div>
       <div class="page-actions">
         <span v-if="lastUpdated" class="text-xs text-muted whitespace-nowrap">更新于 {{ lastUpdated }}</span>
         <label class="toggle-label"><input v-model="autoRefresh" type="checkbox" />自动刷新</label>
@@ -46,11 +46,11 @@
         <ChevronDown class="h-4 w-4 shrink-0 text-surface-400 transition-transform" :class="{ '-rotate-90': metricsCollapsed }" />
         <span class="text-sm font-medium text-surface-100">项目指标</span>
         <span v-if="metricsCollapsed" class="min-w-0 truncate text-xs text-muted">
-          纳管 {{ managedCount }} / {{ store.projects.length }} · 健康 {{ healthyCount }} · 需关注 {{ attentionCount }} · 容器 {{ runningContainerCount }}/{{ containerCount }} 运行中 · 健康分 {{ healthScore }}
+          项目 {{ store.projects.length }} · 健康 {{ healthyCount }} · 需关注 {{ attentionCount }} · 容器 {{ runningContainerCount }}/{{ containerCount }} 运行中 · 健康分 {{ healthScore }}
         </span>
       </button>
       <div v-if="!metricsCollapsed" class="metric-grid mt-3">
-        <button class="metric-tile" :class="{ active: filter === 'managed' }" @click="filter = filter === 'managed' ? 'all' : 'managed'"><span class="metric-icon text-blue-300"><Boxes class="h-5 w-5" /></span><span><strong>{{ managedCount }}</strong><small>已纳管项目</small></span><span class="metric-meta">共 {{ store.projects.length }} 个</span></button>
+        <button class="metric-tile" @click="resetFilters"><span class="metric-icon text-blue-300"><Boxes class="h-5 w-5" /></span><span><strong>{{ store.projects.length }}</strong><small>项目总数</small></span><span class="metric-meta">自动发现与管理</span></button>
         <button class="metric-tile" :class="{ active: filter === 'running' }" @click="filter = filter === 'running' ? 'all' : 'running'"><span class="metric-icon text-emerald-300"><CircleCheckBig class="h-5 w-5" /></span><span><strong>{{ healthyCount }}</strong><small>健康运行</small></span><span class="metric-meta">项目状态正常</span></button>
         <button class="metric-tile" :class="{ active: filter === 'attention' }" @click="filter = filter === 'attention' ? 'all' : 'attention'"><span class="metric-icon text-amber-300"><AlertTriangle class="h-5 w-5" /></span><span><strong>{{ attentionCount }}</strong><small>需要关注</small></span><span class="metric-meta">停止、部分异常或不健康</span></button>
         <button class="metric-tile" :class="{ active: filter === 'stopped' }" @click="filter = filter === 'stopped' ? 'all' : 'stopped'"><span class="metric-icon text-surface-300"><Container class="h-5 w-5" /></span><span><strong>{{ runningContainerCount }} / {{ containerCount }}</strong><small>运行中容器</small></span><span class="metric-meta">{{ stoppedContainerCount }} 个未运行</span></button>
@@ -58,14 +58,14 @@
       </div>
     </section>
     <div v-if="store.projects.length" class="toolbar-panel">
-      <label class="search-field"><Search class="h-4 w-4" /><input v-model="searchQuery" placeholder="搜索项目、容器、镜像或路径" /></label>
-      <select v-model="filter" class="input sm:w-40" aria-label="状态筛选"><option value="all">全部项目</option><option value="attention">需要关注</option><option value="running">健康运行</option><option value="stopped">已停止</option><option value="managed">已纳管</option><option value="unmanaged">未纳管</option><option value="favorites">仅收藏</option></select>
+      <label class="search-field"><Search class="h-4 w-4" /><input v-model="searchQuery" placeholder="搜索项目、备注、容器、镜像或路径" /></label>
+      <select v-model="filter" class="input sm:w-40" aria-label="状态筛选"><option value="all">全部项目</option><option value="attention">需要关注</option><option value="running">健康运行</option><option value="stopped">已停止</option><option value="favorites">仅收藏</option></select>
       <select v-model="sort" class="input sm:w-40" aria-label="项目排序"><option value="priority">异常与收藏优先</option><option value="name">按项目名称</option><option value="owner">按项目归属</option></select>
-      <label class="toggle-label whitespace-nowrap"><input type="checkbox" :checked="allVisibleSelected" :disabled="!visibleManagedProjects.length" @change="toggleAllVisible" />选择当前</label>
+      <label class="toggle-label whitespace-nowrap"><input type="checkbox" :checked="allVisibleSelected" :disabled="!visibleProjects.length" @change="toggleAllVisible" />选择当前</label>
       <span class="ml-auto whitespace-nowrap text-muted">显示 {{ visibleProjects.length }} / {{ store.projects.length }}</span>
     </div>
     <BatchOperationsBar v-if="selectedProjects.length" :selected-count="selectedProjects.length" :busy="busy" @run="runBatch" @clear="selectedIds = []" />
-    <ConfirmDialog :show="batchConfirmation.show" :title="'批量' + actionLabel(batchConfirmation.action)" :message="'将对 ' + batchConfirmation.count + ' 个已纳管项目执行“' + actionLabel(batchConfirmation.action) + '”。操作会按顺序执行，失败项目仍会保留在结果中。确认继续?'" tone="warning" :confirm-text="'确认' + actionLabel(batchConfirmation.action)" :busy="batchSubmitting" @confirm="confirmBatch" @cancel="batchConfirmation.show = false" />
+    <ConfirmDialog :show="batchConfirmation.show" :title="'批量' + actionLabel(batchConfirmation.action)" :message="'将对 ' + batchConfirmation.count + ' 个项目执行“' + actionLabel(batchConfirmation.action) + '”。操作会按顺序执行，失败项目仍会保留在结果中。确认继续?'" tone="warning" :confirm-text="'确认' + actionLabel(batchConfirmation.action)" :busy="batchSubmitting" @confirm="confirmBatch" @cancel="batchConfirmation.show = false" />
     <ConfirmDialog :show="!!restartTarget" title="重启项目" :message="`确认重启 ${restartTarget?.projectName || ''}?`" tone="warning" confirm-text="重启" @confirm="confirmKeyboardRestart" @cancel="restartTarget = null" />
     <Skeleton v-if="store.loading && !store.projects.length" variant="cards" :rows="4" label="服务列表加载中" class="flex-1" />
     <EmptyState v-else-if="!store.projects.length" icon="Boxes" title="暂未发现 Compose 项目" description="Docker 中没有带 Compose 标签的项目,或尚未扫描" />
@@ -75,14 +75,16 @@
         v-for="project in visibleProjects" :key="project.id" :project="project"
         :expanded="expandedIds.has(project.id)" :selected="selectedIds.includes(project.id)" :focused="route.query.focus === project.id || kbFocusId === project.id"
         :busy="busy" :last-results="updateSettings.lastResults" :action-running="project.id === runningAction.id ? runningAction.action : ''"
-        @toggle-expand="toggleExpanded(project.id)" @toggle-select="toggleSelection(project.id)" @refresh="refresh" @activity="activityProject = project" @env="envProject = project" @upgrade="upgradeProject = project" @db-dump="dbDumpProject = project" @action="(action) => run(project, action)"
+        :action-container-id="project.id === runningAction.id ? runningAction.containerId || '' : ''"
+        @container-action="({ container, action }) => run(project, action, container)"
+        @rebuild="run(project, 'rebuild')"
+        @toggle-expand="toggleExpanded(project.id)" @toggle-select="toggleSelection(project.id)" @refresh="refresh" @activity="activityProject = project" @env="openAccess(project)" @credentials="openAccess(project, 'credentials')" @upgrade="openProjectUpdate(project)" @db-dump="dbDumpProject = project" @action="(action) => run(project, action)"
       />
     </div>
     <OperationOutputDrawer v-if="output.open" :label="actionLabel(output.action)" :name="output.name" :text="output.text" :project-id="output.projectId" :exit-code="output.exitCode" :running="output.running" :batch-tasks="batchTasks" :batch-progress="batchProgress" :completed-count="completedBatchTasks" @close="output.open = false" @diagnose="openDiagnosisForOutput" @inspect="inspectOutputProject" />
-    <ProjectEnvModal v-if="envProject" :project="envProject" @close="closeEnv" @refresh="refresh" @apply="handleEnvApply" />
+    <ProjectAccessModal v-if="envProject" :key="envProject.id" :project="envProject" :initial-tab="accessInitialTab" @close="closeEnv" @refresh="refresh" @apply="handleEnvApply" />
     <AIDiagnosisModal v-if="diagnosis" :open="!!diagnosis" :project-id="diagnosis.projectId" :project-name="diagnosis.projectName" :container-id="diagnosis.containerId" :raw-logs="diagnosis.rawLogs" :env-keys="diagnosis.envKeys" :failed-command="diagnosis.failedCommand" :exit-code="diagnosis.exitCode" :env-editable="diagnosis.envEditable" @close="diagnosis = null" />
     <ProjectActivityDrawer v-if="activityProject" :project="activityProject" @close="activityProject = null" @restored="handleRestored" />
-    <ProjectUpgradeModal v-if="upgradeProject" :project="upgradeProject" :open="!!upgradeProject" @close="upgradeProject = null" @upgrade="handleUpgrade" />
     <DbDumpModal v-if="dbDumpProject" :project="dbDumpProject" @close="dbDumpProject = null" />
   </div>
 </template>
@@ -91,6 +93,7 @@
 import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { AlertTriangle, Bot, Boxes, ChevronDown, CircleCheckBig, Container, Gauge, Keyboard, RefreshCw, Search } from 'lucide-vue-next';
+import { useHostsStore } from '../stores/hosts.js';
 import { useServicesStore } from '../stores/services.js';
 import { useToastStore } from '../stores/toast.js';
 import { useKeyboardNavigation } from '../composables/useKeyboardNavigation.js';
@@ -99,10 +102,9 @@ import { useAgentConsole } from '../composables/useAgentConsole.js';
 import { usePullRefresh } from '../composables/usePullRefresh.js';
 import { api, streamComposeControl, wsUrl } from '../api/client.js';
 import ProjectActivityDrawer from '../components/ProjectActivityDrawer.vue';
-import ProjectEnvModal from '../components/services/ProjectEnvModal.vue';
+import ProjectAccessModal from '../components/services/ProjectAccessModal.vue';
 import ServiceProjectCard from '../components/services/ServiceProjectCard.vue';
 import AIDiagnosisModal from '../components/services/AIDiagnosisModal.vue';
-import ProjectUpgradeModal from '../components/services/ProjectUpgradeModal.vue';
 import DbDumpModal from '../components/services/DbDumpModal.vue';
 import BatchOperationsBar from '../components/services/BatchOperationsBar.vue';
 import OperationOutputDrawer from '../components/services/OperationOutputDrawer.vue';
@@ -117,8 +119,9 @@ const { openAgent, updateAgentContext } = useAgentConsole();
 const autoRefresh = ref(true); const busy = ref(false); const expandedIds = ref(new Set());
 const searchQuery = ref(''); const filter = ref('all'); const sort = ref('priority');
 const selectedIds = ref([]); const updateSettings = ref({ lastResults: [] }); const focusedProject = ref('');
+const accessInitialTab = ref('env');
 const inspection = ref(null); const inspectionLoading = ref(false);
-const batchTasks = ref([]); const activityProject = ref(null); const envProject = ref(null); const diagnosis = ref(null); const upgradeProject = ref(null); const dbDumpProject = ref(null); const runningAction = ref({ id: '', action: '' }); const kbFocusId = ref(''); const restartTarget = ref(null);
+const batchTasks = ref([]); const activityProject = ref(null); const envProject = ref(null); const diagnosis = ref(null); const dbDumpProject = ref(null); const runningAction = ref({ id: '', action: '' }); const kbFocusId = ref(''); const restartTarget = ref(null);
 const GP = { healthy: 90, attention: 75, degraded: 55, critical: 0 };
 const GRADE_LABELS = { healthy: '健康', attention: '需关注', degraded: '需处理', critical: '严重' };
 const inspectionGradeLabel = computed(() => GRADE_LABELS[inspection.value?.latest?.grade] || '健康');
@@ -194,7 +197,6 @@ const output = reactive({ open: false, text: '', action: '', name: '', projectId
 const batchConfirmation = reactive({ show: false, action: '', count: 0 });
 const batchSubmitting = ref(false);
 const containerCount = computed(() => store.projects.reduce((count, project) => count + project.containers.length, 0));
-const managedCount = computed(() => store.projects.filter((project) => project.managed).length);
 const runningContainerCount = computed(() => store.projects.reduce((count, project) => count + project.containers.filter((container) => container.state === 'running').length, 0));
 const stoppedContainerCount = computed(() => containerCount.value - runningContainerCount.value);
 const healthyCount = computed(() => store.projects.filter((project) => !hasAttention(project)).length);
@@ -215,39 +217,45 @@ const visibleProjects = computed(() => {
   const matches = store.projects.filter((project) => (!matcher || matcher(project)) && (!query || searchIndex(project).includes(query)));
   return [...matches].sort(sortComparators[sort.value]);
 });
-const visibleManagedProjects = computed(() => visibleProjects.value.filter((project) => project.managed));
-const selectedProjects = computed(() => store.projects.filter((project) => selectedIds.value.includes(project.id) && project.managed));
-const allVisibleSelected = computed(() => visibleManagedProjects.value.length > 0 && visibleManagedProjects.value.every((project) => selectedIds.value.includes(project.id)));
+const selectedProjects = computed(() => store.projects.filter((project) => selectedIds.value.includes(project.id)));
+const allVisibleSelected = computed(() => visibleProjects.value.length > 0 && visibleProjects.value.every((project) => selectedIds.value.includes(project.id)));
 const completedBatchTasks = computed(() => batchTasks.value.filter((task) => ['success', 'failed'].includes(task.status)).length);
 const batchProgress = computed(() => batchTasks.value.length ? Math.round(completedBatchTasks.value / batchTasks.value.length * 100) : 0);
 
-function refresh() { return store.refresh().finally(() => { if (!store.error) lastUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour12: false }); }); }
+function refresh(force = false) { return store.refresh(force === true).finally(() => { if (!store.error) lastUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour12: false }); }); }
 function hasAttention(project) { return project.status !== 'running' || project.containers.some((container) => container.health === 'unhealthy'); }
-function searchIndex(project) { return [project.projectName, project.owner, project.workingDir, project.note, ...project.containers.flatMap((container) => [container.name, container.image])].join(' ').toLowerCase(); }
-const statusMatchers = { attention: (p) => hasAttention(p), running: (p) => !hasAttention(p), managed: (p) => p.managed, unmanaged: (p) => !p.managed, favorites: (p) => p.favorite, stopped: (p) => p.containers.some((c) => c.state !== 'running') };
-const sortComparators = { name: (a, b) => a.projectName.localeCompare(b.projectName), owner: (a, b) => a.owner.localeCompare(b.owner) || a.projectName.localeCompare(b.projectName), priority: (a, b) => Number(hasAttention(b)) - Number(hasAttention(a)) || Number(b.favorite) - Number(a.favorite) || Number(b.managed) - Number(a.managed) || a.projectName.localeCompare(b.projectName) };
+function searchIndex(project) { return [project.projectName, project.displayName, project.owner, project.workingDir, project.note, ...project.containers.flatMap((container) => [container.name, container.image])].join(' ').toLowerCase(); }
+const statusMatchers = { attention: (p) => hasAttention(p), running: (p) => !hasAttention(p), favorites: (p) => p.favorite, stopped: (p) => p.containers.some((c) => c.state !== 'running') };
+const sortComparators = { name: (a, b) => a.projectName.localeCompare(b.projectName), owner: (a, b) => a.owner.localeCompare(b.owner) || a.projectName.localeCompare(b.projectName), priority: (a, b) => Number(hasAttention(b)) - Number(hasAttention(a)) || Number(b.favorite) - Number(a.favorite) || a.projectName.localeCompare(b.projectName) };
 function resetFilters() { searchQuery.value = ''; filter.value = 'all'; sort.value = 'priority'; }
 function toggleSelection(projectId) { selectedIds.value = selectedIds.value.includes(projectId) ? selectedIds.value.filter((id) => id !== projectId) : [...selectedIds.value, projectId]; }
-function toggleAllVisible() { const visibleIds = visibleManagedProjects.value.map((project) => project.id); selectedIds.value = allVisibleSelected.value ? selectedIds.value.filter((id) => !visibleIds.includes(id)) : [...new Set([...selectedIds.value, ...visibleIds])]; }
+function toggleAllVisible() { const visibleIds = visibleProjects.value.map((project) => project.id); selectedIds.value = allVisibleSelected.value ? selectedIds.value.filter((id) => !visibleIds.includes(id)) : [...new Set([...selectedIds.value, ...visibleIds])]; }
 function toggleExpanded(projectId) { const next = new Set(expandedIds.value); if (next.has(projectId)) next.delete(projectId); else next.add(projectId); expandedIds.value = next; }
-function actionLabel(action) { return ({ up: '启动', restart: '重启', stop: '停止', pull: '拉取', ps: '状态', 'env.apply': '应用环境变量', 'env.save': '保存环境变量' })[action] || action; }
-async function run(project, action) {
+function openProjectUpdate(project) {
+  if (busy.value || !project.editable) return;
+  router.push({ path: '/maintenance', query: { action: 'update', projectId: project.id, hostId: useHostsStore().activeHostId } });
+}
+function actionLabel(action) { return ({ up: '启动', restart: '重启', rebuild: '重建', stop: '停止', pull: '拉取', ps: '状态', 'env.apply': '应用环境变量', 'env.save': '保存环境变量' })[action] || action; }
+async function run(project, action, container = null) {
   if (busy.value) return;
   clearTimeout(jobPollTimer);
   activeJobId = '';
-  runningAction.value = { id: project.id, action };
+  runningAction.value = { id: project.id, action, containerId: container?.id || '' };
   controlController?.abort();
   controlController = new AbortController();
-  busy.value = true; batchTasks.value = []; output.open = true; output.text = ''; output.action = action; output.name = project.projectName; output.projectId = project.id; output.exitCode = null; output.running = true;
+  busy.value = true; batchTasks.value = []; output.open = true; output.text = ''; output.action = action; output.name = container ? `${project.projectName} / ${container.name}` : `${project.projectName}（整组）`; output.projectId = project.id; output.exitCode = null; output.running = true;
   try {
     await streamComposeControl(project.id, action, (frame) => {
       if (frame.type === 'stdout' || frame.type === 'stderr') output.text += frame.data;
       else if (frame.type === 'error') output.text += `\n[错误] ${frame.data}`;
       else if (frame.type === 'exit') { output.exitCode = frame.data.code; output.text += `\n[退出码 ${frame.data.code}]`; }
-    }, null, null, controlController.signal);
-    await refresh();
+    }, null, container ? { action, containerId: container.id } : null, controlController.signal);
   } catch (error) { if (error.name !== 'AbortError') { output.text += `\n[请求失败] ${error.message}`; output.exitCode = 1; }
-  } finally { controlController = null; busy.value = false; runningAction.value = { id: '', action: '' }; output.running = false; }
+  } finally {
+    await refresh(true);
+    if (store.error) output.text += `\n[状态刷新失败] ${store.error}`;
+    controlController = null; busy.value = false; runningAction.value = { id: '', action: '' }; output.running = false;
+  }
 }
 async function handleEnvApply({ project }) {
   if (busy.value) return;
@@ -264,28 +272,6 @@ async function handleEnvApply({ project }) {
     }, `/projects/${project.id}/env/apply`, { restart: true }, controlController.signal);
     useToastStore().success('环境变量已应用,容器平滑重建完成');
     await refresh();
-  } catch (error) {
-    if (error.name !== 'AbortError') { output.text += `\n[请求失败] ${error.message}`; output.exitCode = 1; }
-  } finally { controlController = null; busy.value = false; output.running = false; }
-}
-async function handleUpgrade({ project, services }) {
-  if (busy.value) return;
-  upgradeProject.value = null;
-  output.open = true; output.text = ''; output.action = 'images.upgrade'; output.name = project.projectName; output.projectId = project.id; output.exitCode = null; output.running = true;
-  busy.value = true;
-  controlController?.abort();
-  controlController = new AbortController();
-  try {
-    await api.streamUpgrade(project.id, services, (frame) => {
-      if (frame.type === 'stdout' || frame.type === 'stderr') output.text += frame.data;
-      else if (frame.type === 'error') output.text += `\n[错误] ${frame.data}`;
-      else if (frame.type === 'exit') { output.exitCode = frame.data.code; output.text += `\n[退出码 ${frame.data.code}]`; }
-      else if (frame.type === 'result') {
-        if (frame.data?.degraded) output.text += `\n[升级后容器未通过健康检查,可在活动/备份中回滚]`;
-      }
-    }, controlController.signal);
-    useToastStore().success('镜像升级完成');
-    store.refresh();
   } catch (error) {
     if (error.name !== 'AbortError') { output.text += `\n[请求失败] ${error.message}`; output.exitCode = 1; }
   } finally { controlController = null; busy.value = false; output.running = false; }
@@ -363,6 +349,10 @@ async function focusProject() {
   if (!expandedIds.value.has(projectId)) toggleExpanded(projectId);
   await nextTick(); document.getElementById(`project-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
+function openAccess(project, tab = 'env') {
+  accessInitialTab.value = tab;
+  envProject.value = project;
+}
 function closeEnv() {
   envProject.value = null;
   if (route.query.env) {
@@ -376,7 +366,7 @@ async function openEnvFromQuery() {
   if (!projectId || envProject.value?.id === projectId) return;
   const project = store.projects.find((p) => p.id === projectId);
   if (!project) return;
-  envProject.value = project;
+  openAccess(project);
 }
 watch(() => route.query.env, openEnvFromQuery);
 
@@ -441,7 +431,7 @@ watch(kbFocusId, (id) => {
   nextTick(() => { document.getElementById(`project-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
 });
 useKeyboardNavigation({
-  enabled: computed(() => route.name === 'services' && !envProject.value && !dbDumpProject.value && !upgradeProject.value && !activityProject.value && !diagnosis.value),
+  enabled: computed(() => route.name === 'services' && !envProject.value && !dbDumpProject.value && !activityProject.value && !diagnosis.value),
   onCheatSheet: () => { window.dispatchEvent(new CustomEvent('composeops:open-cheatsheet')); },
   getProjectIds: () => visibleProjects.value.map((project) => project.id),
   onMove: (id) => { kbFocusId.value = id; },
@@ -453,7 +443,7 @@ async function handleKbAction(action) {
   if (!project) return;
   if (action === 'expand') { toggleExpanded(project.id); return; }
   if (action === 'l') { router.push({ path: '/logs', query: { projectId: project.id, from: 'services' } }); return; }
-  if (action === 'e') { envProject.value = project; return; }
+  if (action === 'e') { openAccess(project); return; }
   if (action === 'c') { router.push({ path: '/compose', query: { projectId: project.id } }); return; }
   if (action === 'r') {
     restartTarget.value = project;

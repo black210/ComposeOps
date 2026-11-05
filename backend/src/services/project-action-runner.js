@@ -3,6 +3,7 @@ import { runWorkspaceCompose } from './compose-workspace.js';
 import { runContainerAction, supportsContainerAction } from './project-control.js';
 import { withProjectOperationLock } from './project-operation-lock.js';
 import { invalidateScanCache } from './scanner.js';
+import { getActivityDocker } from './docker-hosts.js';
 
 export function assertProjectActionAllowed(project, action) {
   if (!Object.hasOwn(ACTIONS, action)) {
@@ -10,15 +11,27 @@ export function assertProjectActionAllowed(project, action) {
   }
   if (!project.managed) throw Object.assign(new Error('项目尚未加入管理'), { statusCode: 403 });
   if (!project.mountEnabled && !supportsContainerAction(action)) {
-    throw Object.assign(new Error('尚未为该项目启用 Compose 目录能力'), { statusCode: 403 });
+    throw Object.assign(new Error('当前节点或项目路径不支持 Compose 目录访问'), { statusCode: 403 });
   }
   if (project.mountEnabled && !project.editable && !supportsContainerAction(action)) {
     throw Object.assign(new Error('Compose 项目路径缺失或权限范围过宽，无法安全挂载'), { statusCode: 409 });
   }
 }
 
-export async function prepareProjectAction(project, action) {
+export async function prepareProjectAction(project, action, containerId = undefined) {
   assertProjectActionAllowed(project, action);
+  // 精确容器控制不执行 compose up，避免创建/重建依赖及同组副本。
+  if (containerId !== undefined) {
+    if (!['up', 'stop', 'restart'].includes(action)) throw Object.assign(new Error('单容器仅支持启动、停止和重启'), { statusCode: 400 });
+    const container = project.containers.find(item => item.id === containerId);
+    if (!container) throw Object.assign(new Error('容器不属于当前项目或已被重建，请刷新后重试'), { statusCode: 404 });
+    const docker = getActivityDocker(); // 固定请求建立时的节点。
+    return {
+      mode: 'container', container,
+      run: (onOutput = () => {}) => withProjectOperationLock(project.id,
+        () => runContainerAction({ ...project, containers: [container] }, action, onOutput, docker)).finally(invalidateScanCache),
+    };
+  }
   if (project.editable && project.mounted) {
     const safeFiles = await Promise.all(project.composeFiles.map((_, index) => resolveProjectFile(project, index)));
     return {
@@ -57,5 +70,6 @@ export async function prepareProjectAction(project, action) {
     };
   }
   // containers 模式走 dockerode API(无子进程),task.stop 只能标记终止,动作会自然结束。
-  return { mode: 'containers', run: (onOutput = () => {}) => withProjectOperationLock(project.id, () => runContainerAction(project, action, onOutput)).finally(invalidateScanCache) };
+  const docker = getActivityDocker();
+  return { mode: 'containers', run: (onOutput = () => {}) => withProjectOperationLock(project.id, () => runContainerAction(project, action, onOutput, docker)).finally(invalidateScanCache) };
 }

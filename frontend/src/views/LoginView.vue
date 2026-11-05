@@ -1,5 +1,6 @@
 <template>
   <main class="login-page min-h-dvh relative isolate grid place-items-center overflow-hidden px-4 py-8 sm:px-6">
+    <div class="absolute right-4 top-4 z-20"><ThemeSelect /></div>
     <div class="login-glow login-glow-one" aria-hidden="true"></div>
     <div class="login-glow login-glow-two" aria-hidden="true"></div>
     <div class="login-layout relative z-10 grid w-full max-w-5xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-16">
@@ -76,6 +77,7 @@
 </template>
 
 <script setup>
+import ThemeSelect from '../components/common/ThemeSelect.vue';
 import { ref } from 'vue';
 import { Boxes, LogIn, ShieldCheck, Activity, FileCode2, ScrollText } from 'lucide-vue-next';
 import { useAuthStore } from '../stores/auth.js';
@@ -108,7 +110,7 @@ async function submit() {
   background:
     radial-gradient(ellipse at 16% 18%, rgba(37, 99, 235, 0.11), transparent 38%),
     radial-gradient(ellipse at 88% 82%, rgba(16, 185, 129, 0.07), transparent 34%),
-    #10141a;
+    var(--panel-deep);
 }
 
 .login-page::before {
@@ -133,7 +135,7 @@ async function submit() {
 }
 
 .login-glow-one { top: -14rem; left: 12%; background: #3b82f6; }
-.login-glow-two { right: -12rem; bottom: -15rem; background: #10b981; }
+.login-glow-two { right: -12rem; bottom: -15rem; background: var(--ok); }
 
 .login-brand-mark {
   display: grid;
@@ -143,16 +145,16 @@ async function submit() {
   place-items: center;
   border: 1px solid rgba(96, 165, 250, 0.3);
   border-radius: 13px;
-  color: #93c5fd;
-  background: linear-gradient(145deg, rgba(37, 99, 235, 0.22), rgba(15, 23, 42, 0.75));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 24px rgba(0, 0, 0, 0.2);
+  color: var(--ui-link);
+  background: linear-gradient(145deg, rgba(37, 99, 235, 0.22), rgba(var(--ui-panel-rgb), 0.75));
+  box-shadow: inset 0 1px 0 rgba(var(--ui-ink-rgb), 0.06), 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
 .login-brand-mark-small { width: 36px; height: 36px; border-radius: 10px; }
-.login-headline-accent { color: #93c5fd; }
-.login-feature { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025); }
-.login-card { box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.035); }
-.login-lock-icon { color: #93c5fd; }
+.login-headline-accent { color: var(--ui-link); }
+.login-feature { box-shadow: inset 0 1px 0 rgba(var(--ui-ink-rgb), 0.025); }
+.login-card { box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(var(--ui-ink-rgb), 0.035); }
+.login-lock-icon { color: var(--ui-link); }
 .login-loading-mark { width: 15px; height: 15px; }
 
 @media (prefers-reduced-motion: reduce) {

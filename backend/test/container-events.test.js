@@ -11,7 +11,7 @@ process.env.DB_PATH = path.join(tempDir, 'test.db');
 const { subscribeContainerEvents, startStateRecorder } = await import('../src/services/container-events.js');
 const { getActivityDocker, setActiveHost, upsertHost } = await import('../src/services/docker-hosts.js');
 const { scanProjects, invalidateScanCache } = await import('../src/services/scanner.js');
-const { setProjectPreference, listContainerStateEvents } = await import('../src/lib/db.js');
+const { listContainerStateEvents } = await import('../src/lib/db.js');
 const docker = getActivityDocker();
 const row = { Id: 'test-container', Names: ['/测试'], State: 'running', Labels: { 'com.docker.compose.project': 'events-audit', 'com.docker.compose.project.working_dir': tempDir } };
 const event = { Type: 'container', Action: 'start', Actor: { ID: row.Id, Attributes: { name: '测试容器', ...row.Labels } } };
@@ -19,9 +19,6 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('Docker Events 跨 chunk/UTF-8 JSON 保留完整事件,坏行不吞后续事件', async (t) => {
   t.mock.method(docker, 'listContainers', async () => [row]);
-  invalidateScanCache();
-  const [project] = await scanProjects();
-  setProjectPreference(project.id, { managed: true });
   invalidateScanCache();
   await scanProjects();
   const stream = new PassThrough();
@@ -37,11 +34,10 @@ test('Docker Events 跨 chunk/UTF-8 JSON 保留完整事件,坏行不吞后续�
   assert.equal(events[0].containerName, '测试容器');
 });
 
-test('状态记录器把 die 退出码落库,扫描快照缺失的容器靠事件标签补项目', async (t) => {
+test('状态记录器把 die 退出码落库,无白名单的项目和扫描缺失的容器靠事件标签补项目', async (t) => {
   t.mock.method(docker, 'listContainers', async () => [row]);
   invalidateScanCache();
   const [project] = await scanProjects();
-  setProjectPreference(project.id, { managed: true });
   invalidateScanCache();
   await scanProjects();
 

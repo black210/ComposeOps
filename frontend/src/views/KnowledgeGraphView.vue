@@ -42,7 +42,7 @@
     <!-- 图谱概览统计 -->
     <div class="metric-grid">
       <div class="metric-tile"><span class="metric-icon text-blue-300"><Server class="h-5 w-5" /></span><span><strong>{{ hosts.length }}</strong><small>宿主节点</small></span><span class="metric-meta">{{ activeHostName }}</span></div>
-      <div class="metric-tile"><span class="metric-icon text-emerald-300"><Boxes class="h-5 w-5" /></span><span><strong>{{ projects.length }}</strong><small>纳管项目</small></span><span class="metric-meta">{{ containerCount }} 容器</span></div>
+      <div class="metric-tile"><span class="metric-icon text-emerald-300"><Boxes class="h-5 w-5" /></span><span><strong>{{ projects.length }}</strong><small>Compose 项目</small></span><span class="metric-meta">{{ containerCount }} 容器</span></div>
       <div class="metric-tile"><span class="metric-icon text-violet-300"><HardDrive class="h-5 w-5" /></span><span><strong>{{ volumeCount }}</strong><small>持久化卷</small></span><span class="metric-meta">本地存储绑定</span></div>
       <div class="metric-tile"><span class="metric-icon text-rose-300"><AlertTriangle class="h-5 w-5" /></span><span><strong>{{ alertCount }}</strong><small>关联事件</small></span><span class="metric-meta">监控告警</span></div>
       <div class="metric-tile"><span class="metric-icon text-amber-300"><Bot class="h-5 w-5" /></span><span><strong>{{ inspectionCount }}</strong><small>智能巡检</small></span><span class="metric-meta">巡检档案</span></div>
@@ -64,14 +64,14 @@
       </div>
 
       <Skeleton v-if="loading" variant="table" :rows="4" label="图谱加载中" />
-      <EmptyState v-else-if="!projects.length" icon="Network" title="暂无项目数据" description="纳管项目后,知识图谱会自动生成实体关系" />
+      <EmptyState v-else-if="!projects.length" icon="Network" title="暂无项目数据" description="发现项目后，知识图谱会自动生成实体关系" />
       <ForceGraph
         v-else
         :nodes="graphNodes"
         :edges="graphEdges"
         :height="embedded ? 480 : 560"
         default-layout="dag"
-        :lane-titles="{ single: '资产实体', first: '宿主与告警', middle: '纳管项目', last: '存储卷' }"
+        :lane-titles="{ single: '资产实体', first: '宿主与告警', middle: 'Compose 项目', last: '存储卷' }"
         aria-label="运维资产关系图谱"
       />
     </section>
@@ -149,7 +149,7 @@
 
     <!-- 底部实体明细 -->
     <section class="section-panel">
-      <div class="mb-4"><h2 class="section-title">实体资产分布</h2><p class="mt-1 text-muted">各类被纳管实体的基础属性与健康概况</p></div>
+      <div class="mb-4"><h2 class="section-title">实体资产分布</h2><p class="mt-1 text-muted">各类已发现实体的基础属性与健康概况</p></div>
       <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         <div class="rounded-xl border border-surface-800 bg-surface-950/40 p-4">
           <h3 class="mb-3 flex items-center gap-2 text-sm font-semibold text-sky-300"><Server class="h-4 w-4" />节点 ({{ hosts.length }})</h3>
@@ -351,8 +351,8 @@ onMounted(async () => {
   display: inline-flex;
   padding: 3px;
   border-radius: 12px;
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(var(--ui-panel-rgb), 0.7);
+  border: 1px solid rgba(var(--ui-ink-rgb), 0.1);
 }
 .ios-segment-btn {
   display: flex;
@@ -361,16 +361,16 @@ onMounted(async () => {
   padding: 5px 10px;
   font-size: 12px;
   font-weight: 500;
-  color: #94A3B8;
+  color: var(--text-soft);
   border-radius: 9px;
   transition: all 0.18s ease;
 }
 .ios-segment-btn:hover {
-  color: #F8FAFC;
+  color: var(--text-bright);
 }
 .ios-segment-btn.active {
-  color: #FFFFFF;
-  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-bright);
+  background: rgba(var(--ui-ink-rgb), 0.12);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 .ios-mini-tag {
@@ -380,7 +380,7 @@ onMounted(async () => {
   border-radius: 6px;
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, monospace;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--ui-ink-rgb), 0.04);
   border: 1px solid;
 }
 </style>

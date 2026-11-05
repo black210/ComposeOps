@@ -7,10 +7,10 @@
           <Star class="w-4 h-4" :class="project.favorite ? 'fill-amber-400 text-amber-400' : ''" />
         </button>
       </div>
-      <button class="service-project-card__toggle svc-card__toggle" :aria-expanded="expanded" :aria-label="`${expanded ? '收起' : '展开'} ${project.projectName}`" @click="$emit('toggle-expand')">
+      <button class="service-project-card__toggle svc-card__toggle" :aria-expanded="expanded" :aria-label="`${expanded ? '收起' : '展开'} ${project.displayName || project.projectName}`" @click="$emit('toggle-expand')">
         <span class="svc-card__identity">
           <span class="svc-card__title-line">
-            <span class="svc-card__name">{{ project.projectName }}</span>
+            <span class="svc-card__name" :title="project.projectName">{{ project.displayName || project.projectName }}</span>
             <span v-if="project.note?.trim()" class="svc-card__remark" :title="project.note">{{ project.note }}</span>
             <span v-if="imageState === 'updated'" class="svc-card__update">镜像待应用</span>
             <span v-else-if="imageState === 'failed'" class="svc-card__update">镜像检查失败</span>

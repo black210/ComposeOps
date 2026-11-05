@@ -190,3 +190,11 @@ test('后来发现的项目直接可用；过宽目录和跨目录配置不自�
     assert.equal(project.composeMode, 'containers');
   }
 });
+
+test('无目录的辅助组显示未知容器，保留原项目名和稳定 ID', async t => {
+ const helper=row('composeops');delete helper.Labels['com.docker.compose.project.working_dir'];delete helper.Labels['com.docker.compose.project.config_files'];helper.Labels['composeops.helper']='maintenance';
+ t.mock.method(local,'listContainers',async()=>[helper]);
+ const [project]=await scanProjects();
+ assert.equal(project.displayName,'未知容器');assert.equal(project.projectName,'composeops');assert.equal(project.workingDir,'');assert.equal(project.editable,false);
+ const again=(await scanProjects())[0];assert.equal(again.id,project.id);
+});

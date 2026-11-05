@@ -224,7 +224,7 @@ const batchProgress = computed(() => batchTasks.value.length ? Math.round(comple
 
 function refresh(force = false) { return store.refresh(force === true).finally(() => { if (!store.error) lastUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour12: false }); }); }
 function hasAttention(project) { return project.status !== 'running' || project.containers.some((container) => container.health === 'unhealthy'); }
-function searchIndex(project) { return [project.projectName, project.owner, project.workingDir, project.note, ...project.containers.flatMap((container) => [container.name, container.image])].join(' ').toLowerCase(); }
+function searchIndex(project) { return [project.projectName, project.displayName, project.owner, project.workingDir, project.note, ...project.containers.flatMap((container) => [container.name, container.image])].join(' ').toLowerCase(); }
 const statusMatchers = { attention: (p) => hasAttention(p), running: (p) => !hasAttention(p), favorites: (p) => p.favorite, stopped: (p) => p.containers.some((c) => c.state !== 'running') };
 const sortComparators = { name: (a, b) => a.projectName.localeCompare(b.projectName), owner: (a, b) => a.owner.localeCompare(b.owner) || a.projectName.localeCompare(b.projectName), priority: (a, b) => Number(hasAttention(b)) - Number(hasAttention(a)) || Number(b.favorite) - Number(a.favorite) || a.projectName.localeCompare(b.projectName) };
 function resetFilters() { searchQuery.value = ''; filter.value = 'all'; sort.value = 'priority'; }

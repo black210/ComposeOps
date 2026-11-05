@@ -88,3 +88,11 @@ describe('项目备注标签', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('保存失败');
   });
 });
+
+it('无目录组显示未知容器，Docker 项目标识保留用于操作', async () => {
+ render({project:{...project,projectName:'composeops',displayName:'未知容器'}});
+ expect(wrapper.get('.svc-card__name').text()).toBe('未知容器');
+ expect(wrapper.get('.svc-card__name').attributes('title')).toBe('composeops');
+ await wrapper.get('[aria-label="展开 未知容器"], [aria-label="收起 未知容器"]').trigger('click');
+ expect(wrapper.emitted('toggle-expand')).toEqual([[]]);
+});

@@ -38,7 +38,7 @@
             <button v-for="p in quickProjects" :key="p.id" class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-surface-800/60" @click="goProject(p)">
               <span class="status-dot shrink-0" :class="projectStatusDotClass(p.status)"></span>
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-mono text-surface-200">{{ p.projectName }}</span>
+                <span class="block truncate text-sm font-mono text-surface-200">{{ p.displayName || p.projectName }}</span>
                 <span class="block truncate text-[10px] text-surface-500">{{ p.owner }} · {{ p.containers.length }} 容器</span>
               </span>
               <span v-if="p.note?.trim()" class="max-w-32 truncate count-badge text-[9px]" :title="p.note">{{ p.note }}</span>

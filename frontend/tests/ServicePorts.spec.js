@@ -54,3 +54,17 @@ describe('多应用端口展示', () => {
     expect(launcher.get('a').attributes('title')).toContain('端口来自应用配置');
   });
 });
+
+it('NPS 配置端口显示用途，仅管理入口可点击', () => {
+  const wrapper=mount(ContainerPorts,{props:{container:{name:'nps',networkMode:'host',hostPorts:[
+    {port:8081,type:'tcp',source:'config-file',purpose:'web',label:'管理'},
+    {port:8024,type:'tcp',source:'config-file',purpose:'bridge',label:'客户端连接'},
+    {port:1180,type:'tcp',source:'config-file',purpose:'proxy',label:'HTTP 代理'},
+  ]},links:[{port:8081,url:'http://nas.example:8081'}]}});
+  expect(wrapper.text()).toContain('8081/tcp · 管理');
+  expect(wrapper.text()).toContain('8024/tcp · 客户端连接');
+  expect(wrapper.text()).toContain('1180/tcp · HTTP 代理');
+  expect(wrapper.text()).toContain('主机网络（配置）');
+  expect(wrapper.findAll('a')).toHaveLength(1);
+  expect(wrapper.get('a').attributes('href')).toBe('http://nas.example:8081');
+});

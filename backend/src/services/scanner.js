@@ -5,6 +5,7 @@ import { getProjectPreference } from '../lib/db.js';
 import { safeProjectMountPath } from './mount-plan.js';
 import { composeProjectId } from './project-id.js';
 import { extractHostPorts } from './project-ports.js';
+import { readNpsPorts } from './nps-ports.js';
 
 const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
 const COMPOSE_WORKDIR_LABEL = 'com.docker.compose.project.working_dir';
@@ -74,7 +75,8 @@ async function readRuntimeDetails(containers, docker) {
     while (next < containers.length) {
       const container = containers[next++];
       try {
-        const details = await docker.getContainer(container.id).inspect();
+        const target = docker.getContainer(container.id);
+        const details = await target.inspect();
         const state = details.State || {};
         container.startedAt = runtimeTimestamp(state.StartedAt);
         container.stoppedAt = runtimeTimestamp(state.FinishedAt);
@@ -83,7 +85,16 @@ async function readRuntimeDetails(containers, docker) {
         // 显示实际镜像引用；Compose 的目标镜像需重建后才生效。
         if (details.Config?.Image) container.image = details.Config.Image;
         if (details.Image) container.imageId = details.Image;
-        if (container.networkMode === 'host') container.hostPorts = extractHostPorts(details);
+        if (container.networkMode === 'host') {
+          container.hostPorts = extractHostPorts(details);
+          // NPS 把端口写在挂载配置中；只读固定文件，并在原 inspect 并发限制内完成。
+          const configured = await readNpsPorts(target, details);
+          if (configured.length) {
+            const ports = new Map(container.hostPorts.map(port => [`${port.port}/${port.type}`, port]));
+            for (const port of configured) ports.set(`${port.port}/${port.type}`, port);
+            container.hostPorts = [...ports.values()];
+          }
+        }
       } catch {
         // 容器可能已被回收或暂时无法 inspect；保留列表状态，时间保持未知。
         // 不能用 Created 或 Status 文本猜测最后一次启动/停止时间。
@@ -168,6 +179,7 @@ async function scanProjectsUncached(activeDocker, nodeType) {
       projects.set(key, {
         id: composeProjectId(workingDir, projectName),
         projectName,
+        displayName: workingDir ? projectName : '未知容器',
         owner,
         workingDir,
         composeFiles,

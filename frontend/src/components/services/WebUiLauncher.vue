@@ -3,7 +3,7 @@
     <div v-for="group in groups" :key="group.id" class="app-access__group">
       <span class="app-access__name" :title="group.name"><Globe class="h-3 w-3" />{{ group.name }}</span>
       <a v-for="link in group.links" :key="link.port" :href="link.url" target="_blank" rel="noopener noreferrer"
-         class="app-access__port" :aria-label="`打开 ${group.name} 端口 ${link.port}`" :title="`打开 ${group.name} (${link.url})${link.source === 'host-exposed' ? ' · 主机网络，端口来自镜像声明' : link.source === 'host-environment' ? ' · 主机网络，端口来自应用配置' : ''}`">
+         class="app-access__port" :aria-label="`打开 ${group.name} 端口 ${link.port}`" :title="`打开 ${group.name} (${link.url})${link.source === 'host-exposed' ? ' · 主机网络，端口来自镜像声明' : ['host-environment', 'host-config-file'].includes(link.source) ? ' · 主机网络，端口来自应用配置' : ''}`">
         {{ link.port }}<ArrowUpRight class="h-3 w-3" />
       </a>
     </div>

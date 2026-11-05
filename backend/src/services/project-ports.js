@@ -43,7 +43,7 @@ export function extractHostPorts(details = {}) {
 /** 过滤出 Web 候选端口,并整体判定容器是否像数据库。 */
 export function classifyPorts(container = {}) {
   const published = container.networkMode === 'host'
-    ? (container.hostPorts || []).map(({ port, type }) => ({ private: port, public: port, type }))
+    ? (container.hostPorts || []).filter(port => !port.purpose || port.purpose === 'web').map(({ port, type }) => ({ private: port, public: port, type }))
     : (container.ports || []);
   const ports = published.filter((port) => Number(port.public) > 0 && (!port.type || port.type === 'tcp'));
   const candidates = ports
@@ -78,7 +78,7 @@ export function scanProjectWebPorts(project = {}) {
     const ports = pickWebPorts(candidates);
     if (!ports.length) continue;
     results.push({ containerId: container.id, containerName: container.name, serviceName: container.service || container.name, ports,
-      source: container.networkMode === 'host' ? ((container.hostPorts || []).some(port => port.source === 'environment') ? 'host-environment' : 'host-exposed') : 'published',
+      source: container.networkMode === 'host' ? ((container.hostPorts || []).some(port => port.source === 'config-file' && port.purpose === 'web') ? 'host-config-file' : (container.hostPorts || []).some(port => port.source === 'environment') ? 'host-environment' : 'host-exposed') : 'published',
       httpsPorts: container.networkMode === 'host' ? (container.hostPorts || []).filter(port => port.port === 443 || port.scheme === 'https').map(port => port.port) : (container.ports || []).filter((port) => Number(port.private) === 443 && (!port.type || port.type === 'tcp')).map((port) => Number(port.public)) });
   }
   return results;

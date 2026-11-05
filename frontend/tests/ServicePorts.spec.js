@@ -13,7 +13,7 @@ describe('多应用端口展示', () => {
     expect(wrapper.findAll('a')).toHaveLength(3);
     expect(wrapper.text()).toContain('web');
     expect(wrapper.text()).toContain('sync');
-    expect(wrapper.findAll('button')).toHaveLength(0);
+    expect(wrapper.findAll('button')).toHaveLength(2);
   });
   it('映射去重并保留 TCP/UDP 差异，只有 Web TCP 链接可点击', () => {
     const wrapper = mount(ContainerPorts, { props: {

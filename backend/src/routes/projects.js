@@ -10,7 +10,7 @@ import { startProjectUpdate } from '../services/container-maintenance.js';
 import { readContainerStat } from '../services/stats.js';
 import { validateComposeSemantics, previewComposeChange } from '../services/compose-validator.js';
 import { listProjectDbContainers, runDbDump } from '../services/db-dumper.js';
-import { scanProjectWebPorts, buildWebUiLinks } from '../services/project-ports.js';
+import { registerProjectWebUiRoutes } from './project-webui-settings.js';
 import { registerProjectCredentialRoutes } from './project-credentials.js';
 import {
   addOperation,
@@ -85,6 +85,7 @@ const fileIndexField = { type: 'number' };
 
 export default async function projectRoutes(fastify) {
   registerProjectCredentialRoutes(fastify);
+  registerProjectWebUiRoutes(fastify);
   fastify.get('/', async () => ({ projects: await scanProjects() }));
 
   fastify.get('/mount-plan', async () => buildMountPlan(await scanProjects()));
@@ -683,12 +684,4 @@ export default async function projectRoutes(fastify) {
     }
   });
 
-  // ---- WebUI 智能雷达 ----
-  fastify.get('/:id/webui', { schema: { params: idParams } }, async (request, reply) => {
-    const project = await projectOr404(request.params.id, reply);
-    if (!project) return;
-    const entries = scanProjectWebPorts(project);
-    const links = buildWebUiLinks(request.headers.host, entries);
-    return { projectId: project.id, projectName: project.projectName, links };
-  });
 }

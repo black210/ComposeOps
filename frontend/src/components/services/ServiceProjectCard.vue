@@ -34,7 +34,7 @@
       </div>
     </header>
     <p v-if="noteError" class="alert-error mx-3 mb-3" role="alert">{{ noteError }}</p>
-    <div v-if="webuiLinks.length" class="svc-card__access"><WebUiLauncher :links="webuiLinks" /></div>
+    <div v-if="webuiLinks.length" class="svc-card__access"><WebUiLauncher :links="webuiLinks" @configure="entryService = $event" /></div>
 
     <div v-if="expanded" class="svc-card__details">
       <div class="svc-card__toolbar">
@@ -105,6 +105,7 @@
       </div>
     </div>
   </article>
+  <ProjectWebUiModal v-if="entryService" :project="project" :initial-service="entryService" @close="entryService = ''" @saved="loadWebUi" />
   <ConfirmDialog :show="stopConfirm" title="停止项目容器" :message="`确认停止 ${project.projectName} 中现有的容器?不会删除容器和网络。`" tone="warning" confirm-text="停止容器" @confirm="confirmStop" @cancel="stopConfirm = false" />
   <ConfirmDialog :show="!!stopContainer" title="停止单个容器" :message="`确认停止 ${stopContainer?.name || ''}？同组其他容器将继续运行。`" tone="warning" confirm-text="停止容器" @confirm="confirmContainerStop" @cancel="stopContainer = null" />
 </template>
@@ -114,11 +115,13 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, 
 import { Bot, Box, ChevronDown, Database, Download, FileCode2, Folder, FolderCog, GitBranch, History, KeyRound, Layers, ListTree, LoaderCircle, Pencil, Play, RefreshCw, RotateCw, ScrollText, Sparkles, Square, Star, TerminalSquare } from 'lucide-vue-next';
 import StatusBadge from '../common/StatusBadge.vue';
 import WebUiLauncher from './WebUiLauncher.vue';
+import ProjectWebUiModal from './ProjectWebUiModal.vue';
 import ContainerPorts from './ContainerPorts.vue';
 import SparklineChart from '../common/SparklineChart.vue';
 import { api, streamProjectStats } from '../../api/client.js';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
 
+const entryService = ref('');
 const noteSaving = ref(false);
 const noteError = ref('');
 const props = defineProps({

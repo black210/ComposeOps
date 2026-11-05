@@ -189,7 +189,9 @@ export const api = {
   getActiveHost: () => request('/hosts/active'),
   // image update radar
   getProjectUpdates: (projectId, force = false, options = {}) => request(`/projects/${projectId}/updates?force=${force ? '1' : '0'}`, options),
-  getProjectWebUi: (projectId) => request(`/projects/${projectId}/webui`),
+  getProjectWebUi: (projectId) => request(`/projects/${projectId}/webui`, { cache: 'no-store' }),
+  getProjectWebUiSettings: (projectId) => request(`/projects/${projectId}/webui-settings`, { cache: 'no-store' }),
+  saveProjectWebUiSettings: (projectId, payload) => request(`/projects/${projectId}/webui-settings`, { method: 'PUT', body: JSON.stringify(payload) }),
   getProjectCredentials: (projectId) => request(`/projects/${projectId}/credentials`, { cache: 'no-store' }),
   saveProjectCredentials: (projectId, payload) => request(`/projects/${projectId}/credentials`, { method: 'PUT', body: JSON.stringify(payload) }),
   listDbDumpTargets: (projectId) => request(`/projects/${projectId}/db-dump`),

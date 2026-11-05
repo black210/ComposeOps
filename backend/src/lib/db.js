@@ -651,6 +651,19 @@ const MIGRATIONS = [
       )`);
     },
   },
+  {
+    version: 20,
+    name: 'project_webui_settings',
+    up(database) {
+      database.exec(`CREATE TABLE IF NOT EXISTS project_webui_settings (
+        host_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 0,
+        entries_json TEXT NOT NULL DEFAULT '[]',
+        PRIMARY KEY(host_id, project_id)
+      )`);
+    },
+  },
 ];
 
 /** 幂等加列:列已存在时直接返回 false,不抛错。 */

@@ -382,21 +382,31 @@ export async function streamComposeControl(projectId, action, onFrame, path = nu
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const parts = buf.split('\n\n');
-    buf = parts.pop();
-    for (const part of parts) {
-      const line = part.trim();
-      if (!line.startsWith('data:')) continue;
-      try {
-        onFrame(JSON.parse(line.slice(5).trim()));
-      } catch {
-        // 跳过无法解析的控制流帧,让连接继续接收后续事件。
-      }
+  let exited = false;
+  const consume = (part) => {
+    const line = part.trim();
+    if (!line.startsWith('data:')) return;
+    let frame;
+    try { frame = JSON.parse(line.slice(5).trim()); } catch { return; }
+    if (frame.type === 'exit' && Number.isInteger(frame.data?.code)) exited = true;
+    onFrame(frame);
+  };
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) consume(part);
     }
+    buf += decoder.decode();
+    if (buf.trim()) consume(buf);
+    if (!exited) throw new Error('操作连接已中断，未收到执行结果，请检查容器实际状态后重试');
+  } finally {
+    // 执行期间可能已读取过中间状态，结束后必须再次失效。
+    invalidateSwr('/projects');
+    reader.releaseLock();
   }
 }
 

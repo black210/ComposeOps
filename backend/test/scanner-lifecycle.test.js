@@ -95,7 +95,7 @@ test('项目操作完成后立即读取真实容器状态', async t => {
   let state = 'exited';
   t.mock.method(local, 'listContainers', async () => [{ ...row('action'), State: state }]);
   t.mock.method(local, 'getContainer', () => ({
-    inspect: async () => ({ State: { Status: state } }),
+    inspect: async () => ({ Config: { Labels: row('action').Labels }, State: { Status: state } }),
     start: async () => { state = 'running'; },
   }));
   const [project] = await scanProjects();

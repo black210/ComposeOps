@@ -75,6 +75,8 @@
         v-for="project in visibleProjects" :key="project.id" :project="project"
         :expanded="expandedIds.has(project.id)" :selected="selectedIds.includes(project.id)" :focused="route.query.focus === project.id || kbFocusId === project.id"
         :busy="busy" :last-results="updateSettings.lastResults" :action-running="project.id === runningAction.id ? runningAction.action : ''"
+        :action-container-id="project.id === runningAction.id ? runningAction.containerId || '' : ''"
+        @container-action="({ container, action }) => run(project, action, container)"
         @toggle-expand="toggleExpanded(project.id)" @toggle-select="toggleSelection(project.id)" @refresh="refresh" @activity="activityProject = project" @env="openAccess(project)" @credentials="openAccess(project, 'credentials')" @upgrade="upgradeProject = project" @db-dump="dbDumpProject = project" @action="(action) => run(project, action)"
       />
     </div>
@@ -222,7 +224,7 @@ const allVisibleSelected = computed(() => visibleManagedProjects.value.length > 
 const completedBatchTasks = computed(() => batchTasks.value.filter((task) => ['success', 'failed'].includes(task.status)).length);
 const batchProgress = computed(() => batchTasks.value.length ? Math.round(completedBatchTasks.value / batchTasks.value.length * 100) : 0);
 
-function refresh() { return store.refresh().finally(() => { if (!store.error) lastUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour12: false }); }); }
+function refresh(force = false) { return store.refresh(force === true).finally(() => { if (!store.error) lastUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour12: false }); }); }
 function hasAttention(project) { return project.status !== 'running' || project.containers.some((container) => container.health === 'unhealthy'); }
 function searchIndex(project) { return [project.projectName, project.owner, project.workingDir, project.note, ...project.containers.flatMap((container) => [container.name, container.image])].join(' ').toLowerCase(); }
 const statusMatchers = { attention: (p) => hasAttention(p), running: (p) => !hasAttention(p), managed: (p) => p.managed, unmanaged: (p) => !p.managed, favorites: (p) => p.favorite, stopped: (p) => p.containers.some((c) => c.state !== 'running') };
@@ -232,23 +234,26 @@ function toggleSelection(projectId) { selectedIds.value = selectedIds.value.incl
 function toggleAllVisible() { const visibleIds = visibleManagedProjects.value.map((project) => project.id); selectedIds.value = allVisibleSelected.value ? selectedIds.value.filter((id) => !visibleIds.includes(id)) : [...new Set([...selectedIds.value, ...visibleIds])]; }
 function toggleExpanded(projectId) { const next = new Set(expandedIds.value); if (next.has(projectId)) next.delete(projectId); else next.add(projectId); expandedIds.value = next; }
 function actionLabel(action) { return ({ up: '启动', restart: '重启', stop: '停止', pull: '拉取', ps: '状态', 'env.apply': '应用环境变量', 'env.save': '保存环境变量' })[action] || action; }
-async function run(project, action) {
+async function run(project, action, container = null) {
   if (busy.value) return;
   clearTimeout(jobPollTimer);
   activeJobId = '';
-  runningAction.value = { id: project.id, action };
+  runningAction.value = { id: project.id, action, containerId: container?.id || '' };
   controlController?.abort();
   controlController = new AbortController();
-  busy.value = true; batchTasks.value = []; output.open = true; output.text = ''; output.action = action; output.name = project.projectName; output.projectId = project.id; output.exitCode = null; output.running = true;
+  busy.value = true; batchTasks.value = []; output.open = true; output.text = ''; output.action = action; output.name = container ? `${project.projectName} / ${container.name}` : `${project.projectName}（整组）`; output.projectId = project.id; output.exitCode = null; output.running = true;
   try {
     await streamComposeControl(project.id, action, (frame) => {
       if (frame.type === 'stdout' || frame.type === 'stderr') output.text += frame.data;
       else if (frame.type === 'error') output.text += `\n[错误] ${frame.data}`;
       else if (frame.type === 'exit') { output.exitCode = frame.data.code; output.text += `\n[退出码 ${frame.data.code}]`; }
-    }, null, null, controlController.signal);
-    await refresh();
+    }, null, container ? { action, containerId: container.id } : null, controlController.signal);
   } catch (error) { if (error.name !== 'AbortError') { output.text += `\n[请求失败] ${error.message}`; output.exitCode = 1; }
-  } finally { controlController = null; busy.value = false; runningAction.value = { id: '', action: '' }; output.running = false; }
+  } finally {
+    await refresh(true);
+    if (store.error) output.text += `\n[状态刷新失败] ${store.error}`;
+    controlController = null; busy.value = false; runningAction.value = { id: '', action: '' }; output.running = false;
+  }
 }
 async function handleEnvApply({ project }) {
   if (busy.value) return;

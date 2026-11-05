@@ -102,13 +102,18 @@ export function composeArgs(project, action, overrideFiles = null) {
   const actionArgs = ACTIONS[action];
   if (!actionArgs) throw Object.assign(new Error('不支持的 Compose 操作'), { statusCode: 400 });
   const files = overrideFiles || project.composeFiles;
-  return [...composeBase().slice(1), ...files.flatMap((file) => ['-f', file]), ...actionArgs];
+  return [...composeBase().slice(1), ...composeProjectArgs(project, files), ...actionArgs];
+}
+
+// 项目名来自现有容器标签，不能按目录重新推断（如 fileTransfer 与 file_transfer）。
+export function composeProjectArgs(project, files = project.composeFiles) {
+  return [...(project.projectName ? ['--project-name', project.projectName] : []), ...files.flatMap((file) => ['-f', file])];
 }
 
 export function spawnComposeCommand(project, args, overrideFiles = null) {
   const base = composeBase();
   const files = overrideFiles || project.composeFiles;
-  return spawn(base[0], [...base.slice(1), ...files.flatMap((file) => ['-f', file]), ...args], {
+  return spawn(base[0], [...base.slice(1), ...composeProjectArgs(project, files), ...args], {
     cwd: project.workingDir,
     env: nodeEnv(project),
     stdio: ['ignore', 'pipe', 'pipe'],

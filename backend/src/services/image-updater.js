@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { parse as parseYaml } from 'yaml';
 import { setSetting, addComposeBackup, addOperation } from '../lib/db.js';
-import { readCompose, spawnComposeCommand } from './compose-runner.js';
+import { readCompose, spawnComposeCommand, composeProjectArgs } from './compose-runner.js';
 import { getActivityDocker } from './docker-hosts.js';
 import { withRunner, readArchiveFile, putArchiveFile, execInRunner } from './compose-workspace.js';
 import { fetchRemoteDescription, imageCheckSettings, registryError } from './image-registry.js';
@@ -154,7 +154,7 @@ function environmentArgs(containers) {
   return [...new Set(containers.flatMap((c) => String(c.Labels?.['com.docker.compose.project.environment_file'] || '').split(',').filter(Boolean)))].flatMap((file) => ['--env-file', file]);
 }
 async function resolvedImageServices(project, containers, signal) {
-  const args = ['--project-name', project.projectName, ...environmentArgs(containers), 'config', '--format', 'json', '--no-env-resolution'];
+  const args = [...environmentArgs(containers), 'config', '--format', 'json', '--no-env-resolution'];
   let output;
   if (project.mounted) {
     output = await new Promise((resolve, reject) => {
@@ -178,7 +178,7 @@ async function resolvedImageServices(project, containers, signal) {
   } else {
     output = await withRunner(project, async (container) => {
       const result = await execInRunner(container,
-        ['docker', 'compose', ...project.composeFiles.flatMap((file) => ['-f', file]), ...args], { timeoutMs: 10_000 });
+        ['docker', 'compose', ...composeProjectArgs(project), ...args], { timeoutMs: 10_000 });
       if (result.code !== 0) throw new Error('Compose 镜像变量展开失败');
       return result.stdout;
     });

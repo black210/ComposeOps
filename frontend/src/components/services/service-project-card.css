@@ -78,13 +78,18 @@
 .svc-container__metric small { margin-left: 3px; color: var(--text-faint); font-size: 9px; font-weight: 400; }
 .svc-container__uptime { flex-basis: 100%; color: var(--text-faint); font-size: 10px; text-align: right; }
 .svc-container__sparkline { margin-inline: 4px 12px; }
-.svc-container__actions { display: flex; flex-shrink: 0; gap: 4px; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--ops-line); }
+.svc-container__actions { display: flex; flex-shrink: 0; align-items: center; gap: 4px; margin-left: 8px; padding-left: 12px; border-left: 1px solid var(--ops-line); }
+.svc-container__lifecycle { display: flex; align-items: center; gap: 2px; margin-right: 6px; padding-right: 8px; border-right: 1px solid var(--ops-line); }
+.svc-container__lifecycle .btn-ghost { min-height: 31px; padding: 5px 7px; gap: 5px; font-size: 11px; white-space: nowrap; }
+.svc-container__lifecycle .svc-container__stop { color: var(--color-rose-400); }
 .svc-container__actions .icon-btn { width: 29px; height: 31px; color: var(--text-faint); border-radius: 6px; }
 .svc-container__actions .icon-btn:hover { color: var(--color-accent); background: rgba(37, 99, 235, .065); }
 .svc-card :is(a, button):focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 @media (max-width: 1199px) {
   .svc-card__mode { display: none; }
   .svc-container__sparkline { display: none; }
+  .svc-container { flex-wrap: wrap; }
+  .svc-container__actions { flex-basis: calc(100% - 44px); justify-content: flex-end; margin-left: 44px; padding-left: 0; border-left: 0; }
 }
 @media (max-width: 767px) {
   .svc-card__header { gap: 6px; padding: 12px 10px; }
@@ -107,9 +112,10 @@
   .svc-container__metrics { flex: 1; max-width: none; justify-content: flex-start; margin-left: 36px; gap: 6px 14px; }
   .svc-container__metric { flex-direction: row; align-items: baseline; gap: 5px; }
   .svc-container__uptime { flex-basis: auto; align-self: center; text-align: left; }
-  .svc-container__actions { margin-left: auto; gap: 2px; padding-left: 6px; }
+  .svc-container__actions { flex-basis: calc(100% - 36px); margin-left: 36px; gap: 2px; justify-content: flex-start; padding-left: 0; }
   .svc-container__actions .icon-btn { width: 32px; height: 32px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .svc-card.card, .svc-card__chevron { transition: none; }
+  .svc-card .animate-spin { animation: none; }
 }

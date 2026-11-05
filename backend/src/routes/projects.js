@@ -547,16 +547,17 @@ export default async function projectRoutes(fastify) {
   fastify.post('/:id/actions', {
     schema: {
       params: idParams,
-      body: { type: 'object', additionalProperties: false, properties: { action: { type: 'string', maxLength: 32 } } },
+      body: { type: 'object', additionalProperties: false, properties: { action: { type: 'string', maxLength: 32 }, containerId: { type: 'string', minLength: 1, maxLength: 128 } } },
     },
   }, async (request, reply) => {
     const project = await projectOr404(request.params.id, reply);
     if (!project) return;
     const action = request.body?.action;
     let prepared;
-    try { prepared = await prepareProjectAction(project, action); }
+    try { prepared = await prepareProjectAction(project, action, request.body?.containerId); }
     catch (error) { return reply.code(error.statusCode || 400).send({ error: 'unsupported_action', message: error.message }); }
 
+    reply.hijack();
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -567,7 +568,8 @@ export default async function projectRoutes(fastify) {
       if (reply.raw.destroyed || reply.raw.writableEnded) return;
       reply.raw.write(`data: ${JSON.stringify({ type, data })}\n\n`);
     };
-    let output = '';
+    let output = prepared.container ? `仅操作容器 ${prepared.container.name}\n` : `操作 Compose 项目 ${project.projectName}\n`;
+    send('stdout', output);
     let finished = false;
     const finish = (code) => {
       if (finished) return;
@@ -583,12 +585,13 @@ export default async function projectRoutes(fastify) {
       reply.raw.end();
     };
     let child;
-    prepared.run((type, text) => { output += text; send(type, text); }, (process) => { child = process; })
+    const execution = prepared.run((type, text) => { output += text; send(type, text); }, (process) => { child = process; })
       .then(finish)
       .catch((error) => { const text = `${error.message}\n`; output += text; send('stderr', text); finish(1); });
     reply.raw.on('close', () => {
       if (!finished && child && child.exitCode === null && !child.killed) child.kill('SIGTERM');
     });
+    await execution;
   });
   // ---- 镜像更新雷达 ----
   // force 收 string:处理函数按 `=== '1'` 比较,见文件头第 4 条。

@@ -177,7 +177,7 @@
               aria-label="搜索容器、应用或镜像"
             />
             <div class="flex flex-wrap items-center gap-4 text-xs text-muted">
-              <span>当前节点 · {{ data.containers.filter((c) => !c.helper).length }} 个容器</span>
+              <span>当前节点 · {{ maintenanceGroups.length }} 个应用 · {{ filtered.length }} 个容器</span>
               <label v-if="helperCount" class="flex items-center gap-2 cursor-pointer">
                 <input v-model="showHelpers" type="checkbox" />显示辅助容器（{{ helperCount }}）
               </label>
@@ -203,8 +203,8 @@
                   :indeterminate.prop="someSelected && !allSelected"
                   :disabled="!selectable.length"
                   @change="toggleSelection($event.target.checked)"
-                />选择当前列表</label
-              ><span class="text-xs text-muted">已选 {{ selected.length }} 个</span>
+                />选择当前应用</label
+              ><span class="text-xs text-muted">已选 {{ selectedGroupCount }} 个应用</span>
             </div>
             <div class="flex flex-wrap gap-2">
               <button
@@ -212,7 +212,7 @@
                 :disabled="busy || !selected.length"
                 @click="prepare('backup', selected)"
               >
-                备份所选</button
+                备份所选应用</button
               ><button
                 class="btn-primary"
                 :disabled="busy || !selected.length"
@@ -222,112 +222,93 @@
               </button>
             </div>
           </div>
-          <div class="table-wrap maintenance-table-wrap" aria-label="容器运维列表">
-            <table class="data-table maintenance-table">
-              <colgroup>
-                <col class="maintenance-col-check" />
-                <col />
-                <col class="maintenance-col-project" />
-                <col class="maintenance-col-update" />
-                <col class="maintenance-col-actions" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th><span class="sr-only">选择</span></th>
-                  <th>容器 / 当前镜像</th>
-                  <th>所属应用</th>
-                  <th class="maintenance-status-heading">更新 / 状态</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="container in filtered"
-                  :key="container.id"
-                  :class="{ 'maintenance-selected': selected.includes(container.id) }"
+          <div class="maintenance-groups" aria-label="Compose 运维列表">
+            <article
+              v-for="group in maintenanceGroups"
+              :key="group.key"
+              class="maintenance-group"
+              :class="{ 'maintenance-group-expanded': groupExpanded(group), 'maintenance-selected': groupSomeSelected(group) }"
+              :aria-label="group.name + ' 运维'"
+            >
+              <header class="maintenance-group-header">
+                <input
+                  type="checkbox"
+                  :checked="groupSelected(group)"
+                  :indeterminate.prop="groupSomeSelected(group) && !groupSelected(group)"
+                  :disabled="!!groupReason(group)"
+                  :aria-label="'选择应用 ' + group.name"
+                  :title="groupReason(group)"
+                  @change="toggleGroupSelection(group, $event.target.checked)"
+                />
+                <button
+                  type="button"
+                  class="maintenance-group-toggle"
+                  :aria-expanded="groupExpanded(group)"
+                  :aria-controls="'maintenance-group-' + group.key"
+                  :aria-label="(groupExpanded(group) ? '收起 ' : '展开 ') + group.name"
+                  @click="toggleGroup(group)"
                 >
-                  <td class="maintenance-select-cell">
-                    <input
-                      v-model="selected"
-                      type="checkbox"
-                      :value="container.id"
-                      :aria-label="'选择 ' + container.name"
-                      :disabled="!!operationReason(container)"
-                      :title="operationReason(container)"
-                    />
-                  </td>
-                  <td class="maintenance-main-cell">
-                    <p class="maintenance-container-name" :title="container.name">
-                      {{ container.name }}
-                    </p>
-                    <p class="maintenance-container-image text-muted" :title="container.image">
-                      {{ container.image }}
-                    </p>
-                  </td>
-                  <td class="maintenance-origin-cell">
-                    <p class="maintenance-project-name" :title="container.projectName">
-                      {{ container.projectName || (container.helper ? '辅助容器' : '独立容器') }}
-                    </p>
-                    <p class="text-xs text-muted">
-                      {{
-                        container.helper
-                          ? '临时辅助容器'
-                          : container.self
-                            ? '当前运维面板'
-                            : container.projectName
-                              ? 'Compose 应用'
-                              : '独立容器'
-                      }}
-                    </p>
-                  </td>
-                  <td class="maintenance-status-cell">
-                    <div class="maintenance-update-cell">
-                      <button
-                        type="button"
-                        class="maintenance-update-label"
-                        :class="updates[container.id]?.hasUpdate ? 'text-amber-400' : 'text-muted'"
-                        :title="updateDetail(container)"
-                        :aria-label="container.name + '：' + updateLabel(container) + '，查看详情'"
-                        @click="updateTarget = container"
-                      >
-                        {{ updateLabel(container) }}
-                      </button>
-                      <span
-                        class="maintenance-state"
-                        :class="
-                          container.state === 'running' ? 'maintenance-running' : 'text-muted'
-                        "
-                      >
-                        <span class="maintenance-state-dot" aria-hidden="true"></span
-                        >{{ stateLabel(container.state) }}
-                      </span>
-                    </div>
-                  </td>
-                  <td class="maintenance-actions-cell">
-                    <div class="maintenance-row-actions">
-                      <button
-                        class="btn-secondary"
-                        :disabled="busy || !!operationReason(container)"
-                        :title="operationReason(container)"
-                        @click="prepare('update', updateIds([container.id]))"
-                      >
-                        更新</button
-                      ><button
-                        class="btn-secondary"
-                        :disabled="busy || !!operationReason(container)"
-                        :title="operationReason(container)"
-                        @click="prepare('backup', [container.id])"
-                      >
-                        备份
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <p v-if="!filtered.length && !loading" class="p-6 text-center text-sm text-muted">
-              没有匹配容器
-            </p>
+                  <Layers class="maintenance-group-icon h-5 w-5" />
+                  <span class="maintenance-group-identity">
+                    <span class="maintenance-group-name" :title="group.name">{{ group.name }}</span>
+                    <span class="text-xs text-muted">{{ group.kind }} · {{ group.members.length }} 个容器</span>
+                  </span>
+                  <span class="maintenance-group-summary">
+                    <span :class="group.members.some((c) => updates[c.id]?.hasUpdate) ? 'text-amber-400' : 'text-muted'">
+                      {{ groupUpdateLabel(group) }}
+                    </span>
+                    <span class="maintenance-state" :class="group.members.every((c) => c.state === 'running') ? 'maintenance-running' : 'text-muted'">
+                      <span class="maintenance-state-dot" aria-hidden="true"></span>{{ groupRuntimeLabel(group) }}
+                    </span>
+                  </span>
+                  <ChevronDown class="maintenance-group-chevron h-4 w-4" :class="{ 'rotate-180': groupExpanded(group) }" />
+                </button>
+                <div class="maintenance-row-actions">
+                  <button
+                    class="btn-secondary"
+                    :disabled="busy || !!groupReason(group)"
+                    :title="groupReason(group) || '完整备份后更新整个 Compose'"
+                    @click="prepare('update', groupIds(group))"
+                  >更新</button>
+                  <button
+                    class="btn-secondary"
+                    :disabled="busy || !!groupReason(group)"
+                    :title="groupReason(group) || '完整备份整个 Compose'"
+                    @click="prepare('backup', groupIds(group))"
+                  >备份</button>
+                </div>
+              </header>
+              <div v-if="groupExpanded(group)" :id="'maintenance-group-' + group.key" class="maintenance-table-wrap">
+                <table class="data-table maintenance-table" :aria-label="group.name + ' 容器明细'">
+                  <colgroup><col /><col class="maintenance-col-update" /></colgroup>
+                  <thead><tr><th>容器 / 当前镜像</th><th class="maintenance-status-heading">更新 / 状态</th></tr></thead>
+                  <tbody>
+                    <tr v-for="container in group.members" :key="container.id">
+                      <td class="maintenance-main-cell">
+                        <p class="maintenance-container-name" :title="container.name">{{ container.name }}</p>
+                        <p class="maintenance-container-image text-muted" :title="container.image">{{ container.image }}</p>
+                      </td>
+                      <td class="maintenance-status-cell">
+                        <div class="maintenance-update-cell">
+                          <button
+                            type="button"
+                            class="maintenance-update-label"
+                            :class="updates[container.id]?.hasUpdate ? 'text-amber-400' : 'text-muted'"
+                            :title="updateDetail(container)"
+                            :aria-label="container.name + '：' + updateLabel(container) + '，查看详情'"
+                            @click="updateTarget = container"
+                          >{{ updateLabel(container) }}</button>
+                          <span class="maintenance-state" :class="container.state === 'running' ? 'maintenance-running' : 'text-muted'">
+                            <span class="maintenance-state-dot" aria-hidden="true"></span>{{ stateLabel(container.state) }}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+            <p v-if="!maintenanceGroups.length && !loading" class="p-6 text-center text-sm text-muted">没有匹配应用或容器</p>
           </div>
           <p class="text-xs text-muted">
             更新和完整备份均覆盖整个 Compose 应用；更新后保留原启停状态并检查健康。面板自身、临时辅助容器或无法完整保存的数据会在预检中明确阻止；独立容器需先有 Compose 定义才能更新。
@@ -684,7 +665,7 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Archive, Download, Plus, RefreshCw } from 'lucide-vue-next';
+import { Archive, ChevronDown, Download, Layers, Plus, RefreshCw } from 'lucide-vue-next';
 import { api } from '../api/client.js';
 import BaseModal from '../components/common/BaseModal.vue';
 import ConfirmDialog from '../components/common/ConfirmDialog.vue';
@@ -743,15 +724,68 @@ let pollTimer,
   authTimer,
   epoch = 0,
   disposed = false;
-const filtered = computed(() =>
-  data.value.containers.filter(
-    (c) =>
-      (showHelpers.value || !c.helper) &&
-      (c.name + ' ' + c.image + ' ' + c.projectName)
-        .toLowerCase()
-        .includes(query.value.toLowerCase())
-  )
-);
+const expandedGroups = ref(new Set());
+const collapsedSearchGroups = ref(new Set());
+const maintenanceGroupKey = (container) => container.helper ? 'helper-' + container.id
+  : container.projectId ? 'project-' + container.projectId : 'container-' + container.id;
+const maintenanceGroups = computed(() => {
+  const groups = new Map();
+  for (const container of data.value.containers) {
+    if (container.helper && !showHelpers.value) continue;
+    const key = maintenanceGroupKey(container);
+    if (!groups.has(key)) groups.set(key, {
+      key,
+      name: container.helper ? container.name : container.projectName || container.name,
+      kind: container.helper ? '辅助容器' : container.projectName ? 'Compose 应用' : '独立容器',
+      members: [],
+    });
+    groups.get(key).members.push(container);
+  }
+  const search = query.value.trim().toLowerCase();
+  return [...groups.values()]
+    .filter((group) => !search || group.members.some((c) =>
+      [c.name, c.image, c.projectName, c.service].filter(Boolean).join(' ').toLowerCase().includes(search)))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+});
+const filtered = computed(() => maintenanceGroups.value.flatMap((group) => group.members));
+watch(query, () => { collapsedSearchGroups.value = new Set(); });
+function groupExpanded(group) {
+  return query.value.trim() ? !collapsedSearchGroups.value.has(group.key) : expandedGroups.value.has(group.key);
+}
+function toggleGroup(group) {
+  const target = query.value.trim() ? collapsedSearchGroups : expandedGroups;
+  const next = new Set(target.value);
+  if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
+  target.value = next;
+}
+function groupIds(group) { return group.members.map((c) => c.id); }
+function groupReason(group) { return group.members.map(operationReason).find(Boolean) || ''; }
+function groupSelected(group) { return group.members.every((c) => selected.value.includes(c.id)); }
+function groupSomeSelected(group) { return group.members.some((c) => selected.value.includes(c.id)); }
+function toggleGroupSelection(group, checked) {
+  if (groupReason(group)) return;
+  const ids = groupIds(group);
+  selected.value = checked ? [...new Set([...selected.value, ...ids])] : selected.value.filter((id) => !ids.includes(id));
+}
+const selectedGroupCount = computed(() => new Set(data.value.containers
+  .filter((c) => selected.value.includes(c.id)).map(maintenanceGroupKey)).size);
+function groupRuntimeLabel(group) {
+  const running = group.members.filter((c) => c.state === 'running').length;
+  if (running === group.members.length) return '全部运行中';
+  if (!running) return group.members.every((c) => ['exited', 'created', 'stopped'].includes(c.state))
+    ? '全部已停止' : '状态需关注';
+  return running + ' / ' + group.members.length + ' 运行中';
+}
+function groupUpdateLabel(group) {
+  const labels = group.members.map(updateLabel);
+  const available = group.members.filter((c) => updates.value[c.id]?.hasUpdate).length;
+  if (available) return available + ' 个可更新';
+  if (labels.includes('检查中…')) return '检查中…';
+  if (labels.includes('排队中')) return '排队中';
+  if (labels.includes('检查失败')) return '检查失败';
+  if (labels.every((label) => label === labels[0])) return labels[0];
+  return '查看镜像状态';
+}
 const helperCount = computed(() => data.value.containers.filter((c) => c.helper).length);
 const operationReason = (container) =>
   container.helper
@@ -759,7 +793,7 @@ const operationReason = (container) =>
     : container.self
       ? '当前面板不能在自身内部完成停机备份或更新'
       : '';
-const selectable = computed(() => filtered.value.filter((c) => !operationReason(c)));
+const selectable = computed(() => maintenanceGroups.value.filter((group) => !groupReason(group)).flatMap((group) => group.members));
 const allSelected = computed(
   () => !!selectable.value.length && selectable.value.every((c) => selected.value.includes(c.id))
 );
@@ -1208,6 +1242,9 @@ function recover() {
   });
 }
 function hostChanged() {
+  query.value = '';
+  expandedGroups.value = new Set();
+  collapsedSearchGroups.value = new Set();
   preparing.value = false;
   stopUpdateChecks();
   checksStarted = false;
@@ -1291,171 +1328,56 @@ onBeforeUnmount(() => {
   font-size: 13px;
   color: var(--text-soft);
 }
-.maintenance-table-wrap {
+.maintenance-groups { display: grid; gap: 12px; }
+.maintenance-group {
   min-width: 0;
   overflow: hidden;
+  border: 1px solid rgb(var(--ui-line-rgb) / .23);
+  border-radius: 12px;
   background: rgb(var(--ui-panel-rgb));
 }
-.maintenance-table {
-  table-layout: fixed;
-  width: 100%;
+.maintenance-group-expanded { border-color: rgb(37 99 235 / .36); }
+.maintenance-group.maintenance-selected { border-color: var(--color-accent); }
+.maintenance-group-header { display: flex; align-items: center; gap: 16px; padding: 14px 18px; }
+.maintenance-group-header > input { flex: none; }
+.maintenance-group-toggle { display: flex; flex: 1; min-width: 0; align-items: center; gap: 12px; text-align: left; }
+.maintenance-group-icon { flex: none; color: var(--color-accent); }
+.maintenance-group-identity { display: grid; flex: 1; min-width: 0; gap: 4px; }
+.maintenance-group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; color: var(--text-bright); }
+.maintenance-group-summary { display: grid; justify-items: end; flex: none; gap: 4px; font-size: 13px; white-space: nowrap; }
+.maintenance-group-chevron { flex: none; color: var(--text-faint); transition: transform 150ms; }
+.maintenance-group :is(button, input):focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.maintenance-table-wrap { min-width: 0; border-top: 1px solid rgb(var(--ui-line-rgb) / .23); }
+.maintenance-table { table-layout: fixed; width: 100%; }
+.maintenance-col-update { width: 156px; }
+.maintenance-table th { white-space: nowrap; }
+.maintenance-table td { font-family: inherit; padding-block: 12px; height: 66px; }
+.maintenance-container-name, .maintenance-container-image { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.maintenance-container-name { font-size: 13px; font-weight: 500; color: var(--text-bright); }
+.maintenance-container-image { font-size: 12px; margin-top: 3px; }
+.maintenance-status-heading, .maintenance-status-cell { text-align: right; }
+.maintenance-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+.maintenance-running { color: light-dark(#087552, #76d8b0); }
+.maintenance-state-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.maintenance-update-label { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; min-height: 24px; text-align: right; white-space: nowrap; }
+.maintenance-update-label:hover { text-decoration: underline; text-underline-offset: 3px; }
+.maintenance-update-cell { display: grid; justify-items: end; gap: 3px; }
+.maintenance-row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; }
+.maintenance-row-actions button { flex: none; min-width: 62px; min-height: 36px; white-space: nowrap; }
+@media (max-width: 640px) {
+  .maintenance-group-header { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 12px; padding: 14px 12px; }
+  .maintenance-group-header > input { margin: 0; }
+  .maintenance-group-toggle { gap: 8px; }
+  .maintenance-group-icon { display: none; }
+  .maintenance-group-summary { font-size: 12px; }
+  .maintenance-group-name { font-size: 13px; }
+  .maintenance-row-actions { grid-column: 2; justify-content: flex-end; }
+  .maintenance-table thead, .maintenance-table colgroup { display: none; }
+  .maintenance-table, .maintenance-table tbody { display: block; }
+  .maintenance-table tbody tr { display: grid; gap: 8px; padding: 12px; border-top: 1px solid rgb(var(--ui-line-rgb) / .17); }
+  .maintenance-table tbody tr:first-child { border-top: 0; }
+  .maintenance-table td { display: block; min-width: 0; height: auto; padding: 0; border: 0; }
+  .maintenance-update-cell { display: flex; justify-content: space-between; align-items: center; }
 }
-.maintenance-col-check {
-  width: 44px;
-}
-.maintenance-col-project {
-  width: 22%;
-}
-.maintenance-col-update {
-  width: 156px;
-}
-.maintenance-col-actions {
-  width: 168px;
-}
-.maintenance-table th {
-  white-space: nowrap;
-}
-.maintenance-table td {
-  font-family: inherit;
-  padding-block: 14px;
-  height: 78px;
-}
-.maintenance-container-name,
-.maintenance-container-image,
-.maintenance-project-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.maintenance-container-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-surface-100);
-}
-.maintenance-container-image {
-  font-size: 12px;
-  margin-top: 3px;
-}
-.maintenance-project-name {
-  margin-bottom: 3px;
-}
-.maintenance-table .maintenance-selected {
-  background: rgb(59 130 246 / 0.07);
-}
-.maintenance-status-heading {
-  text-align: right;
-}
-.maintenance-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-.maintenance-running {
-  color: light-dark(#087552, #76d8b0);
-}
-.maintenance-state-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.maintenance-update-label {
-  background: none;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  font-size: 13px;
-  min-height: 24px;
-  text-align: right;
-}
-.maintenance-update-label:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.maintenance-table .maintenance-actions-cell {
-  padding-left: 12px;
-}
-.maintenance-table .maintenance-select-cell {
-  padding-right: 0;
-}
-.maintenance-table .maintenance-status-cell {
-  text-align: right;
-}
-.maintenance-table .maintenance-main-cell,
-.maintenance-table .maintenance-origin-cell {
-  min-width: 0;
-}
-.maintenance-row-actions {
-  justify-content: flex-end;
-}
-@media (max-width: 1100px) {
-  .maintenance-table thead,
-  .maintenance-table colgroup {
-    display: none;
-  }
-  .maintenance-table,
-  .maintenance-table tbody {
-    display: block;
-  }
-  .maintenance-table tbody tr {
-    display: grid;
-    grid-template-columns: 20px minmax(0, 1fr) auto;
-    gap: 10px 12px;
-    padding: 16px;
-    border-top: 1px solid rgb(var(--ui-line-rgb) / 0.22);
-  }
-  .maintenance-table tbody tr:first-child {
-    border-top: 0;
-  }
-  .maintenance-table td {
-    display: block;
-    border: 0;
-    padding: 0;
-    height: auto;
-  }
-  .maintenance-table .maintenance-select-cell {
-    grid-column: 1;
-    grid-row: 1 / 4;
-    padding-top: 3px;
-  }
-  .maintenance-table .maintenance-main-cell {
-    grid-column: 2 / 4;
-  }
-  .maintenance-table .maintenance-origin-cell {
-    grid-column: 2;
-  }
-  .maintenance-table .maintenance-status-cell {
-    grid-column: 3;
-    align-self: end;
-  }
-  .maintenance-table .maintenance-actions-cell {
-    grid-column: 2 / 4;
-    padding-left: 0;
-  }
-  .maintenance-row-actions {
-    gap: 12px;
-  }
-}
-.maintenance-state,
-.maintenance-update-label {
-  white-space: nowrap;
-}
-.maintenance-update-cell {
-  display: grid;
-  justify-items: end;
-  gap: 3px;
-}
-.maintenance-row-actions {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 10px;
-}
-.maintenance-row-actions button {
-  flex: none;
-  min-width: 62px;
-  min-height: 36px;
-  white-space: nowrap;
-}
+@media (prefers-reduced-motion: reduce) { .maintenance-group-chevron { transition: none; } }
 </style>

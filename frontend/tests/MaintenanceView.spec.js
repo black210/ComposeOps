@@ -80,6 +80,58 @@ async function show() {
 }
 const button = (text) => wrapper.findAll('button').find((b) => b.text() === text);
 describe('完整备份界面的真实确认条件', () => {
+  it('默认按 Compose 收起，搜索保留整组及操作范围，刷新保留展开、切节点重置', async () => {
+    const dbId = 'b'.repeat(64);
+    const containers = [
+      { ...overview().containers[0], projectId: 'app', service: 'web' },
+      { id: dbId, name: 'app-db', image: 'postgres:15', projectId: 'app', projectName: 'app', service: 'db', state: 'exited' },
+      { id: 'other', name: 'other-web', image: 'nginx:latest', projectId: 'other', projectName: 'other', state: 'running' },
+    ];
+    client.getMaintenance.mockResolvedValue({ ...overview(), containers });
+    await show();
+    expect(wrapper.findAll('.maintenance-group')).toHaveLength(2);
+    expect(wrapper.findAll('.maintenance-table')).toHaveLength(0);
+    const group = wrapper.get('article[aria-label="app 运维"]');
+    expect(group.text()).toContain('2 个容器');
+    expect(group.text()).toContain('1 / 2 运行中');
+    expect(group.get('button[aria-expanded]').attributes('aria-expanded')).toBe('false');
+    await group.get('button[aria-expanded]').trigger('click');
+    expect(group.findAll('tbody tr')).toHaveLength(2);
+    await button('刷新').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('article[aria-label="app 运维"] button[aria-expanded]').attributes('aria-expanded')).toBe('true');
+    await wrapper.get('input[aria-label="搜索容器、应用或镜像"]').setValue('app-web');
+    expect(wrapper.findAll('.maintenance-group')).toHaveLength(1);
+    expect(wrapper.text()).toContain('app-db');
+    await wrapper.get('input[aria-label="选择应用 app"]').setValue(true);
+    await button('更新所选应用').trigger('click');
+    await flushPromises();
+    expect(client.prepareMaintenance).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'update', containerIds: [id, dbId] }));
+    window.dispatchEvent(new Event('composeops:host-changed'));
+    await flushPromises();
+    expect(wrapper.findAll('.maintenance-table')).toHaveLength(0);
+  });
+  it('同名不同项目不合并，含面板自身的组禁用整组选中和操作，辅助容器独立展示', async () => {
+    client.getMaintenance.mockResolvedValue({
+      ...overview(), containers: [
+        { ...overview().containers[0], projectId: 'first' },
+        { id: 'second', name: 'app-two', projectId: 'second', projectName: 'app', state: 'running' },
+        { id: 'panel', name: 'panel', self: true, projectId: 'panel', projectName: 'panel' },
+        { id: 'peer', name: 'peer', projectId: 'panel', projectName: 'panel' },
+        { id: 'helper', name: 'temporary', helper: true, projectId: 'first', projectName: 'app' },
+      ],
+    });
+    await show();
+    expect(wrapper.findAll('.maintenance-group')).toHaveLength(3);
+    const panel = wrapper.get('article[aria-label="panel 运维"]');
+    expect(panel.get('input').element.disabled).toBe(true);
+    expect(panel.findAll('.maintenance-row-actions button').every((b) => b.element.disabled)).toBe(true);
+    await wrapper.findAll('label').find((label) => label.text() === '选择当前应用').get('input').setValue(true);
+    expect(wrapper.text()).toContain('已选 2 个应用');
+    await button('备份所选应用').trigger('click');
+    await flushPromises();
+    expect(client.prepareMaintenance).toHaveBeenLastCalledWith(expect.objectContaining({ containerIds: [id, 'second'] }));
+  });
   it('发起运维会中止镜像检查并显示预检等待状态，避免争用工作区', async () => {
     client.getMaintenance.mockResolvedValue({
       ...overview(),
@@ -102,7 +154,7 @@ describe('完整备份界面的真实确认条件', () => {
     expect(wrapper.text()).not.toContain('正在预检完整范围');
     expect(button('开始完整备份')).toBeDefined();
   });
-  it('单容器更新覆盖同应用全部容器并明确整体确认，备份请求保留原选择', async () => {
+  it('应用组的更新与备份均提交完整范围并明确确认', async () => {
     const dbId = 'b'.repeat(64);
     client.getMaintenance.mockResolvedValue({
       ...overview(),
@@ -131,7 +183,7 @@ describe('完整备份界面的真实确认条件', () => {
     await button('备份').trigger('click');
     await flushPromises();
     expect(client.prepareMaintenance).toHaveBeenLastCalledWith({
-      action: 'backup', containerIds: [id], backupPath: '/backups/apps',
+      action: 'backup', containerIds: [id, dbId], backupPath: '/backups/apps',
     });
   });
   it('代理测试不会保存地址，保存后才强制重新检查', async () => {
@@ -203,6 +255,7 @@ describe('完整备份界面的真实确认条件', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('检查失败');
     expect(wrapper.text()).not.toContain('镜像仓库连接超时');
+    await wrapper.get('button[aria-label="展开 b"]').trigger('click');
     await wrapper.get('button[aria-label="b-web：检查失败，查看详情"]').trigger('click');
     expect(wrapper.text()).toContain('镜像仓库连接超时');
     expect(wrapper.text()).toContain('已检查 2 个应用');
@@ -223,11 +276,11 @@ describe('完整备份界面的真实确认条件', () => {
     await wrapper.get('input[aria-label="搜索容器、应用或镜像"]').setValue('app-web');
     const select = wrapper
       .findAll('label')
-      .find((label) => label.text() === '选择当前列表')
+      .find((label) => label.text() === '选择当前应用')
       .get('input');
     await select.setValue(true);
-    expect(wrapper.text()).toContain('已选 1 个');
-    await button('备份所选').trigger('click');
+    expect(wrapper.text()).toContain('已选 1 个应用');
+    await button('备份所选应用').trigger('click');
     await flushPromises();
     expect(client.prepareMaintenance).toHaveBeenLastCalledWith(
       expect.objectContaining({ containerIds: [id] })
@@ -257,6 +310,7 @@ describe('完整备份界面的真实确认条件', () => {
       await flushPromises();
       expect(requestSignal.aborted).toBe(true);
       expect(wrapper.text()).not.toContain('检查超过 35 秒');
+      await wrapper.get('button[aria-label="展开 app"]').trigger('click');
       await wrapper.get('button[aria-label="app-web：检查失败，查看详情"]').trigger('click');
       expect(wrapper.text()).toContain('检查超过 35 秒');
       client.getProjectUpdates.mockImplementationOnce(
@@ -310,6 +364,8 @@ describe('完整备份界面的真实确认条件', () => {
       images: [{ service: 'web', status: 'updated', hasUpdate: true, reason }],
     });
     await show();
+    expect(wrapper.find('.maintenance-status-cell').exists()).toBe(false);
+    await wrapper.get('button[aria-label="展开 app"]').trigger('click');
     const cell = wrapper.get('.maintenance-status-cell');
     expect(cell.text()).toContain('可更新');
     expect(cell.text()).toContain('运行中');
@@ -318,7 +374,7 @@ describe('完整备份界面的真实确认条件', () => {
     expect(wrapper.text()).not.toContain(reason);
     await cell.get('button').trigger('click');
     expect(wrapper.text()).toContain(reason);
-    expect(wrapper.get('.maintenance-origin-cell').text()).toContain('Compose 应用');
+    expect(wrapper.get('.maintenance-group-header').text()).toContain('Compose 应用');
   });
   it('完整范围先展示，停机影响与密钥保存必须都确认才能执行', async () => {
     await show();

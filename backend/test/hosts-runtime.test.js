@@ -25,6 +25,11 @@ test('HTTP 节点切换: 旧 Docker 节点慢响应不混入新节点项目列�
   const started = new Promise(resolve => { oldStarted = resolve; });
   async function node(name, slow = false) {
     const server = createServer((request, response) => {
+      if (request.url.endsWith(`/containers/${name}/json`)) {
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify({ State: { Status: 'running', StartedAt: '2026-11-05T02:12:37Z' } }));
+        return;
+      }
       assert.match(request.url, /\/containers\/json/);
       const send = () => {
         response.setHeader('content-type', 'application/json');

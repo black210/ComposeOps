@@ -1300,8 +1300,28 @@ function actionLabel(action) {
     ] || action
   );
 }
+async function openRequestedRebuild() {
+  if (route.query.action !== 'rebuild') return false;
+  const { projectId, hostId } = route.query;
+  const requestEpoch = epoch;
+  // 只接受页面加载时的当前节点，切节点后不能重放旧项目请求。
+  await router.replace({ query: { tab: 'containers' } });
+  tab.value = 'containers';
+  if (requestEpoch !== epoch || loading.value || disposed || !data.value.hostId || data.value.hostId !== hostId) {
+    error.value = '节点已变化或列表未加载成功，请返回服务页重新选择重建。';
+    return true;
+  }
+  const members = data.value.containers.filter(c => !c.helper && c.projectId === projectId);
+  if (!members.length || members.some(c => operationReason(c))) {
+    error.value = '应用已变化或不允许重建，请刷新后重新选择。';
+    return true;
+  }
+  await prepare('update', members.map(c => c.id));
+  return true;
+}
 onMounted(() => {
-  void load().then(() => {
+  void load().then(async () => {
+    if (await openRequestedRebuild()) return;
     if (tab.value === 'containers') void checkUpdates(false);
   });
   window.addEventListener('composeops:host-changed', hostChanged);

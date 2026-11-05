@@ -80,6 +80,35 @@ async function show() {
 }
 const button = (text) => wrapper.findAll('button').find((b) => b.text() === text);
 describe('完整备份界面的真实确认条件', () => {
+  it('服务页重建入口仅预检指定节点完整应用，保留显式执行确认', async () => {
+    route.current.query = { action: 'rebuild', projectId: 'app', hostId: 'local' };
+    client.getMaintenance.mockResolvedValue({ ...overview(), containers: [
+      { ...overview().containers[0], projectId: 'app' },
+      { id: 'db', name: 'app-db', projectId: 'app', state: 'exited' },
+      { id: 'other', name: 'other', projectId: 'other', state: 'running' },
+      { id: 'helper', name: 'helper', projectId: 'app', helper: true },
+    ] });
+    client.prepareMaintenance.mockResolvedValue({ ...backupPlan(), action: 'update' });
+    await show();
+    expect(client.prepareMaintenance).toHaveBeenCalledExactlyOnceWith({ action: 'update', containerIds: [id, 'db'], backupPath: '/backups/apps' });
+    expect(wrapper.text()).toContain('整个 Compose 更新前确认');
+    expect(client.executeMaintenance).not.toHaveBeenCalled();
+    expect(button('完整备份后更新整个 Compose').element.disabled).toBe(true);
+    expect(client.getProjectUpdates).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith({ query: { tab: 'containers' } });
+  });
+  it('重建来源节点不匹配或项目消失时拒绝预检，不串入其他应用', async () => {
+    route.current.query = { action: 'rebuild', projectId: 'app', hostId: 'old-host' };
+    await show();
+    expect(wrapper.text()).toContain('节点已变化');
+    expect(client.prepareMaintenance).not.toHaveBeenCalled();
+    wrapper.unmount();
+    route.current.query = { action: 'rebuild', projectId: 'gone', hostId: 'local' };
+    await show();
+    expect(wrapper.text()).toContain('应用已变化');
+    expect(client.prepareMaintenance).not.toHaveBeenCalled();
+    expect(client.executeMaintenance).not.toHaveBeenCalled();
+  });
   it('默认按 Compose 收起，搜索保留整组及操作范围，刷新保留展开、切节点重置', async () => {
     const dbId = 'b'.repeat(64);
     const containers = [

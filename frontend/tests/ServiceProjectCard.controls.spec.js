@@ -25,7 +25,9 @@ describe('服务页单个容器启停', () => {
     expect(wrapper.emitted('container-action')[1]).toEqual([{ container: other, action: 'restart' }]);
     await wrapper.find('.svc-card__lifecycle button').trigger('click');
     expect(wrapper.emitted('action')).toEqual([['up']]);
-    expect(wrapper.text()).toContain('启动整组');
+    expect(wrapper.get('.svc-card__lifecycle').text()).toBe('启动重启停止重建');
+    await wrapper.findAll('.svc-card__lifecycle button')[3].trigger('click');
+    expect(wrapper.emitted('rebuild')).toEqual([[]]);
   });
   it('停止需确认，取消不发请求，确认仅包含目标容器', async () => {
     render();
@@ -47,5 +49,16 @@ describe('服务页单个容器启停', () => {
     await flushPromises();
     expect(wrapper.find('[aria-label="启动 tao-sync"]').exists()).toBe(false);
     expect(wrapper.get('[aria-label="停止 tao-sync"]').element.disabled).toBe(false);
+  });
+  it('最近启动时间使用真实启动时间，镜像明确显示为实际运行引用', async () => {
+    const current = Date.now();
+    render({ project: { ...project, containers: [{ ...other, created: Math.floor((current - 6 * 86400000) / 1000), startedAt: current - 60000, image: 'astrbot:v4.29.3@sha256:original' }] } });
+    expect(wrapper.get('.svc-container__uptime').text()).toContain('1 分钟前启动');
+    expect(wrapper.get('.svc-card__runtime').text()).toContain('1 分钟前启动');
+    expect(wrapper.get('.svc-container__image').text()).toContain('运行镜像 · astrbot:v4.29.3');
+    expect(wrapper.get('.svc-card__lifecycle button:nth-child(2)').attributes('title')).toContain('沿用当前镜像');
+    await wrapper.setProps({ project: { ...project, containers: [{ ...other, created: 1, startedAt: null }] } });
+    expect(wrapper.find('.svc-container__uptime').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('天前启动');
   });
 });

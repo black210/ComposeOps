@@ -60,6 +60,38 @@ function parseComposeFiles(raw, workingDir) {
   return files.length ? files : (workingDir ? [`${workingDir}/docker-compose.yml`] : []);
 }
 
+function runtimeTimestamp(value) {
+  if (typeof value !== 'string') return null;
+  const timestamp = Date.parse(value);
+  // Docker 未启动/未停止时使用 0001-01-01，不能当成真实运行时间。
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
+}
+
+async function readRuntimeDetails(containers, docker) {
+  let next = 0;
+  // 每轮扫描最多 6 个 inspect；复用同一次读取提取主机网络端口。
+  await Promise.all(Array.from({ length: Math.min(6, containers.length) }, async () => {
+    while (next < containers.length) {
+      const container = containers[next++];
+      try {
+        const details = await docker.getContainer(container.id).inspect();
+        const state = details.State || {};
+        container.startedAt = runtimeTimestamp(state.StartedAt);
+        container.stoppedAt = runtimeTimestamp(state.FinishedAt);
+        if (state.Status) container.state = state.Status;
+        if (state.Health?.Status) container.health = state.Health.Status;
+        // 显示实际镜像引用；Compose 的目标镜像需重建后才生效。
+        if (details.Config?.Image) container.image = details.Config.Image;
+        if (details.Image) container.imageId = details.Image;
+        if (container.networkMode === 'host') container.hostPorts = extractHostPorts(details);
+      } catch {
+        // 容器可能已被回收或暂时无法 inspect；保留列表状态，时间保持未知。
+        // 不能用 Created 或 Status 文本猜测最后一次启动/停止时间。
+      }
+    }
+  }));
+}
+
 // 短 TTL 缓存:scanProjects 是几乎所有 /projects/:id/* 请求、WS 日志与 Agent 工具的
 // 入口,每次都是"全容器列表 + 逐项目可达性探测";Docker
 // 事件(尤其 health_status 抖动)还会逐事件再触发。3 秒内复用同一份快照足以削峰,
@@ -144,9 +176,6 @@ async function scanProjectsUncached(activeDocker, nodeType) {
     }
 
     const project = projects.get(key);
-    const started = Number(c.Created || 0) * 1000;
-    const statusMatch = /\((\d+) days?\)/.exec(c.Status || '');
-    const stopped = statusMatch ? Date.now() - Number(statusMatch[1]) * 86400000 : null;
     project.containers.push({
       id: c.Id,
       name: (c.Names[0] || '').replace(/^\//, ''),
@@ -159,9 +188,10 @@ async function scanProjectsUncached(activeDocker, nodeType) {
       // Docker 列表 API 的 Mounts 包含 named/anonymous volume 引用；保留它们供 CMDB 建立血缘关系。
       volumes: (c.Mounts || []).filter((mount) => mount?.Type === 'volume' && mount?.Name).map((mount) => mount.Name),
       created: c.Created,
-      startedAt: started || null,
-      stoppedAt: stopped,
+      startedAt: null,
+      stoppedAt: null,
       health: /\((healthy|unhealthy|starting)\)/.exec(c.Status || '')?.[1] || null,
+      ...(c.HostConfig?.NetworkMode === 'host' ? { hostPorts: [] } : {}),
       ports: (c.Ports || []).filter((port) => port.PublicPort).map((port) => ({
         private: port.PrivatePort,
         public: port.PublicPort,
@@ -171,15 +201,7 @@ async function scanProjectsUncached(activeDocker, nodeType) {
     });
   }
 
-  // host 网络没有 PublicPort，读取 EXPOSE 或明确 Web 端口配置。只返回端口元数据，不传出环境/凭据。
-  const hostContainers = [...projects.values()].flatMap(project => project.containers).filter(container => container.networkMode === 'host');
-  const hostPortResults = await Promise.all(hostContainers.map(async container => {
-    try {
-      const details = await activeDocker.getContainer(container.id).inspect();
-      return extractHostPorts(details);
-    } catch { return []; /* 无法读取声明时，明确显示没有可用端口信息。 */ }
-  }));
-  hostContainers.forEach((container, index) => { container.hostPorts = hostPortResults[index]; });
+  await readRuntimeDetails([...projects.values()].flatMap(project => project.containers), activeDocker);
 
   // 计算每个 project 的状态：running | stopped | partial + 可达性检查
   for (const project of projects.values()) {

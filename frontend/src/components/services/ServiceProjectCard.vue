@@ -38,9 +38,10 @@
     <div v-if="expanded" class="svc-card__details">
       <div class="svc-card__toolbar">
         <div class="svc-card__lifecycle" aria-label="项目启停">
-          <button class="btn-primary" :disabled="!project.managed || locked" :title="project.editable ? '通过 Docker Compose 启动' : '启动项目中已有的容器'" @click="trigger('up')"><Play class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'up' }" />启动整组</button>
-          <button class="btn-secondary" :disabled="!project.managed || locked" @click="trigger('restart')"><RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'restart' }" />重启整组</button>
-          <button class="btn-secondary svc-card__stop" :disabled="!project.managed || locked" @click="trigger('stop')"><Square class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'stop' }" />停止整组</button>
+          <button class="btn-primary" :disabled="!project.managed || locked" :title="project.editable ? '通过 Docker Compose 启动' : '启动项目中已有的容器'" @click="trigger('up')"><Play class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'up' }" />启动</button>
+          <button class="btn-secondary" :disabled="!project.managed || locked" title="重启现有容器，沿用当前镜像；应用新镜像请到运维页更新" @click="trigger('restart')"><RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'restart' }" />重启</button>
+          <button class="btn-secondary svc-card__stop" :disabled="!project.managed || locked" @click="trigger('stop')"><Square class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'stop' }" />停止</button>
+          <button class="btn-secondary" :disabled="!project.editable || locked" title="完整备份后拉取镜像并重建当前 Compose 应用，应用最新配置" @click="$emit('rebuild')"><RefreshCw class="h-3.5 w-3.5" />重建</button>
         </div>
         <div class="svc-card__tools">
           <button class="btn-ghost" :disabled="!project.managed || locked" @click="trigger('ps')"><ListTree class="h-3.5 w-3.5" />状态</button>
@@ -83,7 +84,7 @@
           <span class="svc-container__state" :class="container.state === 'running' ? 'svc-container__state--running' : 'svc-container__state--stopped'"><Box class="h-4 w-4" /></span>
           <div class="svc-container__main">
             <div class="svc-container__title"><span class="svc-container__name">{{ container.name }}</span><span class="svc-container__state-label" :class="container.state === 'running' ? 'text-emerald-300' : 'text-rose-400'">{{ ({ running: '运行中', exited: '已停止', stopped: '已停止', paused: '已暂停', restarting: '重启中', created: '未启动', dead: '异常' })[container.state] || container.state }}</span><span v-if="container.health" class="svc-container__health" :class="healthClass(container.health)">{{ container.health }}</span></div>
-            <div class="svc-container__image" :title="container.image">{{ container.image }}</div>
+            <div class="svc-container__image" :title="`实际运行镜像：${container.image}`"><span>运行镜像 · </span>{{ container.image }}</div>
             <ContainerPorts :container="container" :links="webuiLinks.filter((link) => link.containerId === container.id)" />
           </div>
           <div class="svc-container__metrics">
@@ -96,7 +97,7 @@
             <div class="svc-container__lifecycle" :aria-label="`${container.name} 启停`">
               <button v-if="!['running', 'restarting'].includes(container.state)" class="btn-ghost" :disabled="!project.managed || locked" :aria-label="`${container.state === 'paused' ? '恢复' : '启动'} ${container.name}`" @click="triggerContainer(container, 'up')"><LoaderCircle v-if="actionContainerId === container.id && actionRunning === 'up'" class="h-3.5 w-3.5 animate-spin" /><Play v-else class="h-3.5 w-3.5" />{{ container.state === 'paused' ? '恢复' : '启动' }}</button>
               <button v-if="['running', 'paused', 'restarting'].includes(container.state)" class="btn-ghost svc-container__stop" :disabled="!project.managed || locked" :aria-label="`停止 ${container.name}`" @click="triggerContainer(container, 'stop')"><LoaderCircle v-if="actionContainerId === container.id && actionRunning === 'stop'" class="h-3.5 w-3.5 animate-spin" /><Square v-else class="h-3.5 w-3.5" />停止</button>
-              <button class="btn-ghost" :disabled="!project.managed || locked" :aria-label="`重启 ${container.name}`" @click="triggerContainer(container, 'restart')"><RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': actionContainerId === container.id && actionRunning === 'restart' }" />重启</button>
+              <button class="btn-ghost" :disabled="!project.managed || locked" :aria-label="`重启 ${container.name}`" title="重启现有容器，不会拉取或切换镜像" @click="triggerContainer(container, 'restart')"><RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': actionContainerId === container.id && actionRunning === 'restart' }" />重启</button>
             </div>
             <router-link class="icon-btn" :class="{ 'pointer-events-none opacity-40': !project.managed }" title="实时日志" aria-label="实时日志" :to="{ path: '/logs', query: { projectId: project.id, containerId: container.id, from: 'services' } }"><ScrollText class="h-4 w-4" /></router-link>
             <router-link v-if="dbContainers.length" class="icon-btn" :class="{ 'pointer-events-none opacity-40': !project.managed }" title="聚合日志（所有容器）" aria-label="聚合日志" :to="{ path: '/logs', query: { projectId: project.id, from: 'services' } }"><Layers class="h-4 w-4" /></router-link>
@@ -113,7 +114,7 @@
 
 <script setup>
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
-import { Bot, Box, ChevronDown, Database, Download, FileCode2, Folder, FolderCog, GitBranch, History, KeyRound, Layers, ListTree, LoaderCircle, Pencil, Play, RotateCw, ScrollText, Sparkles, Square, Star, TerminalSquare } from 'lucide-vue-next';
+import { Bot, Box, ChevronDown, Database, Download, FileCode2, Folder, FolderCog, GitBranch, History, KeyRound, Layers, ListTree, LoaderCircle, Pencil, Play, RefreshCw, RotateCw, ScrollText, Sparkles, Square, Star, TerminalSquare } from 'lucide-vue-next';
 import StatusBadge from '../common/StatusBadge.vue';
 import WebUiLauncher from './WebUiLauncher.vue';
 import ContainerPorts from './ContainerPorts.vue';
@@ -131,7 +132,7 @@ const props = defineProps({
   actionContainerId: { type: String, default: '' },
   lastResults: { type: Array, default: () => [] },
 });
-const emit = defineEmits(['toggle-expand', 'toggle-select', 'action', 'container-action', 'activity', 'env', 'credentials', 'db-dump', 'upgrade', 'refresh']);
+const emit = defineEmits(['toggle-expand', 'toggle-select', 'action', 'container-action', 'rebuild', 'activity', 'env', 'credentials', 'db-dump', 'upgrade', 'refresh']);
 const stopConfirm = ref(false);
 const stopContainer = ref(null);
 

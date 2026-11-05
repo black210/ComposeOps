@@ -40,13 +40,13 @@ test('主机网络无 EXPOSE 时返回明确的 Web 配置端口，不暴露其�
   bridge.HostConfig = { NetworkMode: 'bridge' };
   t.mock.method(local, 'listContainers', async () => [host, bridge]);
   const inspect = t.mock.method(local, 'getContainer', id => {
-    assert.equal(id, 'optimizer');
+    if (id === 'bridge') return { inspect: async () => ({ State: { Status: 'running' } }) };
     return { inspect: async () => ({ Config: { Env: ['WEB_PORT=18846', 'AUTH_TOKEN=do-not-return', 'PROXY_PORT=19800'] } }) };
   });
   const projects = await scanProjects();
   assert.deepEqual(projects.find(p => p.projectName === 'optimizer').containers[0].hostPorts,
     [{ port: 18846, type: 'tcp', source: 'environment', scheme: 'http' }]);
-  assert.equal(inspect.mock.callCount(), 1);
+  assert.equal(inspect.mock.callCount(), 2);
   assert.equal(JSON.stringify(projects).includes('do-not-return'), false);
   assert.equal(JSON.stringify(projects).includes('19800'), false);
 });
@@ -121,4 +121,52 @@ test('项目操作完成后立即读取真实容器状态', async t => {
   const prepared = await prepareProjectAction({ ...project, managed: true, mountEnabled: false }, 'up');
   assert.equal(await prepared.run(), 0);
   assert.equal((await scanProjects())[0].status, 'running');
+});
+
+
+test('重启后使用真实 StartedAt，创建时间、旧列表镜像和健康状态不覆盖 inspect', async t => {
+  const created = Math.floor((Date.now() - 6 * 86400000) / 1000);
+  const started = new Date(Date.now() - 1000).toISOString();
+  const finished = new Date(Date.now() - 2000).toISOString();
+  t.mock.method(local, 'listContainers', async () => [{ ...row('astrbot'), Created: created, Image: 'old:list', Status: 'Up (unhealthy)' }]);
+  t.mock.method(local, 'getContainer', () => ({ inspect: async () => ({ State: { Status: 'running', StartedAt: started, FinishedAt: finished, Health: { Status: 'healthy' } }, Image: 'sha256:actual', Config: { Image: 'astrbot:v4.29.3@sha256:original', Env: ['TOKEN=inspect-secret-sentinel'] } }) }));
+  const [project] = await scanProjects();
+  const container = project.containers[0];
+  assert.equal(container.startedAt, Date.parse(started));
+  assert.equal(container.stoppedAt, Date.parse(finished));
+  assert.equal(container.created, created);
+  assert.equal(container.image, 'astrbot:v4.29.3@sha256:original');
+  assert.equal(container.imageId, 'sha256:actual');
+  assert.equal(container.health, 'healthy');
+  assert.equal(JSON.stringify(project).includes('inspect-secret-sentinel'), false);
+});
+
+test('停止使用真实 FinishedAt；未启动的零值、非法时间和 inspect 失败均不猜测时间', async t => {
+  const finished = '2026-11-05T02:12:37.725628767Z';
+  t.mock.method(local, 'listContainers', async () => ['stopped', 'created', 'invalid', 'missing'].map(name => ({ ...row(name), State: 'exited', Created: 1, Status: 'Exited (2 days)' })));
+  t.mock.method(local, 'getContainer', name => ({ inspect: async () => {
+    if (name === 'missing') throw Object.assign(new Error('gone'), { statusCode: 404 });
+    return { State: { Status: name === 'created' ? 'created' : 'exited', StartedAt: name === 'invalid' ? 'bad-date' : '0001-01-01T00:00:00Z', FinishedAt: name === 'stopped' ? finished : '0001-01-01T00:00:00Z' } };
+  } }));
+  const projects = await scanProjects();
+  for (const project of projects) {
+    assert.equal(project.containers[0].startedAt, null);
+    assert.equal(project.containers[0].stoppedAt, project.projectName === 'stopped' ? Date.parse(finished) : null);
+  }
+});
+
+test('运行状态 inspect 最多并发 6 个，每个容器只读取一次且复用扫描缓存', async t => {
+  const names = Array.from({ length: 15 }, (_, i) => 'bounded-' + i);
+  let active = 0, max = 0, reads = 0;
+  t.mock.method(local, 'listContainers', async () => names.map(row));
+  t.mock.method(local, 'getContainer', () => ({ inspect: async () => {
+    active++; reads++; max = Math.max(max, active);
+    await new Promise(resolve => setTimeout(resolve, 2));
+    active--;
+    return { State: { Status: 'running', StartedAt: '2026-11-05T02:12:37Z' } };
+  } }));
+  assert.equal((await scanProjects()).length, 15);
+  await scanProjects();
+  assert.equal(reads, 15);
+  assert.equal(max, 6);
 });

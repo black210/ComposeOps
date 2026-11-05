@@ -569,6 +569,7 @@ export default async function projectRoutes(fastify) {
       reply.raw.write(`data: ${JSON.stringify({ type, data })}\n\n`);
     };
     let output = prepared.container ? `仅操作容器 ${prepared.container.name}\n` : `操作 Compose 项目 ${project.projectName}\n`;
+    if (action === 'restart') output += '重启沿用当前镜像，不应用 Compose 配置变更；应用新镜像请到运维页执行完整备份后更新。\n';
     send('stdout', output);
     let finished = false;
     const finish = (code) => {

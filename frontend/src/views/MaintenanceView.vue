@@ -170,19 +170,24 @@
         class="space-y-5"
       >
         <template v-if="tab === 'containers'">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <input
+          <div class="toolbar-panel maintenance-filters">
+            <label class="search-field"><Search class="h-4 w-4" /><input
               v-model="query"
-              class="input w-full sm:w-72"
               placeholder="搜索容器、应用或镜像"
               aria-label="搜索容器、应用或镜像"
-            />
-            <div class="flex flex-wrap items-center gap-4 text-xs text-muted">
-              <span>当前节点 · {{ maintenanceGroups.length }} 个应用 · {{ filtered.length }} 个容器</span>
-              <label v-if="helperCount" class="flex items-center gap-2 cursor-pointer">
-                <input v-model="showHelpers" type="checkbox" />显示辅助容器（{{ helperCount }}）
-              </label>
-            </div>
+            /></label>
+            <select v-model="updateFilter" class="input sm:w-40" aria-label="镜像更新筛选">
+              <option value="all">全部应用</option>
+              <option value="updatable">可更新</option>
+            </select>
+            <label class="toggle-label whitespace-nowrap"><input type="checkbox"
+              :checked="allSelected" :indeterminate.prop="someSelected && !allSelected"
+              :disabled="!selectable.length || busy" @change="toggleSelection($event.target.checked)"
+            />选择当前应用</label>
+            <span class="ml-auto whitespace-nowrap text-muted" role="status">显示 {{ maintenanceGroups.length }} / {{ allMaintenanceGroups.length }} 个应用</span>
+            <label v-if="helperCount" class="toggle-label whitespace-nowrap text-muted">
+              <input v-model="showHelpers" type="checkbox" />显示辅助容器（{{ helperCount }}）
+            </label>
           </div>
           <div class="maintenance-check-summary" role="status" aria-live="polite">
             <span v-if="checkingUpdates" class="flex items-center gap-2">
@@ -197,27 +202,19 @@
           </div>
           <div class="section-panel flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-4">
-              <label class="flex items-center gap-2 text-sm"
-                ><input
-                  type="checkbox"
-                  :checked="allSelected"
-                  :indeterminate.prop="someSelected && !allSelected"
-                  :disabled="!selectable.length"
-                  @change="toggleSelection($event.target.checked)"
-                />选择当前应用</label
-              ><span class="text-xs text-muted">已选 {{ selectedGroupCount }} 个应用</span>
+              <span class="text-xs text-muted">当前列表已选 {{ selectedGroupCount }} 个应用 · {{ selectedForAction.length }} 个容器</span>
             </div>
             <div class="flex flex-wrap gap-2">
               <button
                 class="btn-secondary"
-                :disabled="busy || !selected.length"
-                @click="prepare('backup', selected)"
+                :disabled="busy || !selectedForAction.length"
+                @click="prepare('backup', selectedForAction)"
               >
                 备份所选应用</button
               ><button
                 class="btn-primary"
-                :disabled="busy || !selected.length"
-                @click="prepare('update', updateIds(selected))"
+                :disabled="busy || !selectedForAction.length"
+                @click="prepare('update', updateIds(selectedForAction))"
               >
                 更新所选应用
               </button>
@@ -309,7 +306,7 @@
                 </table>
               </div>
             </article>
-            <p v-if="!maintenanceGroups.length && !loading" class="p-6 text-center text-sm text-muted">没有匹配应用或容器</p>
+            <p v-if="!maintenanceGroups.length && !loading" class="p-6 text-center text-sm text-muted" role="status">{{ updateFilter === 'updatable' ? (checkingUpdates ? '正在检查镜像，可更新的应用会陆续显示' : '没有符合条件的可更新应用') : '没有匹配应用或容器' }}</p>
           </div>
           <p class="text-xs text-muted">
             更新自动使用默认路径完整备份，成功后拉取并重建整个 Compose 应用；备份失败不更新，完成后保留原启停状态并检查健康。面板自身、临时辅助容器或无法完整保存的数据会在预检中明确阻止；独立容器需先有 Compose 定义才能更新。
@@ -671,7 +668,7 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Archive, ChevronDown, Download, Layers, Plus, RefreshCw } from 'lucide-vue-next';
+import { Archive, ChevronDown, Download, Layers, Plus, RefreshCw, Search } from 'lucide-vue-next';
 import { api } from '../api/client.js';
 import BaseModal from '../components/common/BaseModal.vue';
 import ConfirmDialog from '../components/common/ConfirmDialog.vue';
@@ -691,6 +688,7 @@ const data = ref({ containers: [], backups: [], tasks: [], hostId: '', settings:
 const targets = ref([]),
   selected = ref([]),
   query = ref(''),
+  updateFilter = ref('all'),
   backupPath = ref('');
 const updates = ref({});
 const updateTarget = ref(null);
@@ -734,7 +732,7 @@ const expandedGroups = ref(new Set());
 const collapsedSearchGroups = ref(new Set());
 const maintenanceGroupKey = (container) => container.helper ? 'helper-' + container.id
   : container.projectId ? 'project-' + container.projectId : 'container-' + container.id;
-const maintenanceGroups = computed(() => {
+const allMaintenanceGroups = computed(() => {
   const groups = new Map();
   for (const container of data.value.containers) {
     if (container.helper && !showHelpers.value) continue;
@@ -747,13 +745,16 @@ const maintenanceGroups = computed(() => {
     });
     groups.get(key).members.push(container);
   }
-  const search = query.value.trim().toLowerCase();
   return [...groups.values()]
-    .filter((group) => !search || group.members.some((c) =>
-      [c.name, c.image, c.projectName, c.service].filter(Boolean).join(' ').toLowerCase().includes(search)))
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
 });
-const filtered = computed(() => maintenanceGroups.value.flatMap((group) => group.members));
+const maintenanceGroups = computed(() => {
+  const search = query.value.trim().toLowerCase();
+  return allMaintenanceGroups.value.filter(group =>
+    (updateFilter.value !== 'updatable' || group.members.some(c => updates.value[c.id]?.hasUpdate === true)) &&
+    (!search || group.members.some(c =>
+      [c.name, c.image, c.projectName, c.service].filter(Boolean).join(' ').toLowerCase().includes(search))));
+});
 watch(query, () => { collapsedSearchGroups.value = new Set(); });
 function groupExpanded(group) {
   return query.value.trim() ? !collapsedSearchGroups.value.has(group.key) : expandedGroups.value.has(group.key);
@@ -773,8 +774,8 @@ function toggleGroupSelection(group, checked) {
   const ids = groupIds(group);
   selected.value = checked ? [...new Set([...selected.value, ...ids])] : selected.value.filter((id) => !ids.includes(id));
 }
-const selectedGroupCount = computed(() => new Set(data.value.containers
-  .filter((c) => selected.value.includes(c.id)).map(maintenanceGroupKey)).size);
+const selectedGroupCount = computed(() => new Set(selectable.value
+  .filter((c) => selectedForAction.value.includes(c.id)).map(maintenanceGroupKey)).size);
 function groupRuntimeLabel(group) {
   const running = group.members.filter((c) => c.state === 'running').length;
   if (running === group.members.length) return '全部运行中';
@@ -800,6 +801,8 @@ const operationReason = (container) =>
       ? '当前面板不能在自身内部完成停机备份或更新'
       : '';
 const selectable = computed(() => maintenanceGroups.value.filter((group) => !groupReason(group)).flatMap((group) => group.members));
+// 隐藏的选中项保留勾选，但批量动作只作用于当前筛选列表。
+const selectedForAction = computed(() => selectable.value.filter(c => selected.value.includes(c.id)).map(c => c.id));
 const allSelected = computed(
   () => !!selectable.value.length && selectable.value.every((c) => selected.value.includes(c.id))
 );
@@ -1266,6 +1269,7 @@ function recover() {
 }
 function hostChanged() {
   query.value = '';
+  updateFilter.value = 'all';
   expandedGroups.value = new Set();
   collapsedSearchGroups.value = new Set();
   preparing.value = false;
@@ -1363,6 +1367,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.maintenance-filters { flex-wrap: wrap; }
+.maintenance-filters .search-field { flex: 1 1 260px; }
+@media (max-width: 639px) {
+  .maintenance-filters .search-field { flex: 0 0 auto; width: 100%; }
+}
 .maintenance-check-summary {
   display: flex;
   flex-wrap: wrap;

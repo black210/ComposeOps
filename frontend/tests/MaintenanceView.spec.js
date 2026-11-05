@@ -80,6 +80,54 @@ async function show() {
 }
 const button = (text) => wrapper.findAll('button').find((b) => b.text() === text);
 describe('完整备份界面的真实确认条件', () => {
+  it('可更新筛选保留同 Compose 全部容器，搜索与全选只操作当前显示的应用', async () => {
+    const containers = [
+      { id, name: 'app-web', service: 'web', projectId: 'app', projectName: 'app', image: 'web:1', state: 'running' },
+      { id: 'db', name: 'app-db', service: 'db', projectId: 'app', projectName: 'app', image: 'postgres:15', state: 'running' },
+      { id: 'current', name: 'current-web', service: 'web', projectId: 'current', projectName: 'current', image: 'web:1' },
+      { id: 'failed', name: 'failed-web', service: 'web', projectId: 'failed', projectName: 'failed', image: 'web:1' },
+    ];
+    client.getMaintenance.mockResolvedValue({ ...overview(), containers });
+    client.getProjectUpdates.mockImplementation(async projectId => {
+      if (projectId === 'failed') throw new Error('仓库不可用');
+      return { images: projectId === 'app' ? [
+        { service: 'web', status: 'updated', hasUpdate: true },
+        { service: 'db', status: 'current', hasUpdate: false },
+      ] : [{ service: 'web', status: 'current', hasUpdate: false }] };
+    });
+    await show();
+    const selectAll = wrapper.findAll('label').find(label => label.text() === '选择当前应用').get('input');
+    await selectAll.setValue(true);
+    await wrapper.get('select[aria-label="镜像更新筛选"]').setValue('updatable');
+    expect(wrapper.findAll('.maintenance-group')).toHaveLength(1);
+    expect(wrapper.text()).toContain('显示 1 / 3 个应用');
+    expect(wrapper.text()).toContain('当前列表已选 1 个应用 · 2 个容器');
+    await wrapper.get('input[aria-label="搜索容器、应用或镜像"]').setValue('app-db');
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2);
+    expect(wrapper.text()).toContain('app-web');
+    expect(client.prepareMaintenance).not.toHaveBeenCalled();
+    await button('备份所选应用').trigger('click');
+    await flushPromises();
+    expect(client.prepareMaintenance).toHaveBeenCalledExactlyOnceWith({ action: 'backup', containerIds: [id, 'db'], backupPath: '/backups/apps' });
+  });
+  it('检查中筛选按结果陆续显示，空结果有提示，切节点重置筛选', async () => {
+    let finish;
+    client.getMaintenance.mockResolvedValue({ ...overview(), containers: [{ ...overview().containers[0], projectId: 'app', service: 'web' }] });
+    client.getProjectUpdates.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    await show();
+    await wrapper.get('select[aria-label="镜像更新筛选"]').setValue('updatable');
+    expect(wrapper.findAll('.maintenance-group')).toHaveLength(0);
+    expect(wrapper.text()).toContain('可更新的应用会陆续显示');
+    finish({ images: [{ service: 'web', status: 'updated', hasUpdate: true }] });
+    await flushPromises();
+    expect(wrapper.findAll('.maintenance-group')).toHaveLength(1);
+    await wrapper.get('input[aria-label="搜索容器、应用或镜像"]').setValue('not-found');
+    expect(wrapper.text()).toContain('没有符合条件的可更新应用');
+    expect(button('更新所选应用').element.disabled).toBe(true);
+    window.dispatchEvent(new Event('composeops:host-changed'));
+    await flushPromises();
+    expect(wrapper.get('select[aria-label="镜像更新筛选"]').element.value).toBe('all');
+  });
   it('服务页更新入口自动完整备份指定节点的完整应用，无需逐次确认', async () => {
     route.current.query = { action: 'update', projectId: 'app', hostId: 'local' };
     client.getMaintenance.mockResolvedValue({ ...overview(), containers: [
@@ -382,7 +430,7 @@ describe('完整备份界面的真实确认条件', () => {
       await flushPromises();
       late({ images: [{ service: 'web', status: 'updated', hasUpdate: true }] });
       await flushPromises();
-      expect(wrapper.text()).not.toContain('可更新');
+      expect(wrapper.findAll('.maintenance-group')).toHaveLength(0);
       expect(button('停止检查')).toBeUndefined();
     } finally {
       vi.useRealTimers();

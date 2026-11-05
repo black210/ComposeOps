@@ -11,6 +11,35 @@ const WEBUI_PORTS = [80, 443, 3000, 8080, 8000, 8888, 9000, 8081, 5000, 5173, 30
 
 const MAX_PORT = 65535;
 
+// 只允许明确表示 Web 监听端口的变量；不扫描任意 *_PORT，避免把数据库、代理或远端端口当成入口。
+const HOST_WEB_PORT_KEYS = ['WEB_PORT', 'WEBUI_PORT', 'WEB_UI_PORT', 'HTTP_PORT', 'HTTPS_PORT'];
+
+/** 主机网络优先使用 EXPOSE；没有 TCP 声明时，补充明确的 Web 端口配置。只返回端口元数据。 */
+export function extractHostPorts(details = {}) {
+  const declared = Object.keys(details.Config?.ExposedPorts || {}).flatMap(key => {
+    const match = /^(\d+)\/(tcp|udp)$/.exec(key);
+    const port = Number(match?.[1]);
+    return match && port > 0 && port <= MAX_PORT ? [{ port, type: match[2] }] : [];
+  });
+  if (declared.some(port => port.type === 'tcp')) return declared;
+
+  const values = new Map();
+  for (const entry of details.Config?.Env || []) {
+    if (typeof entry !== 'string') continue;
+    const separator = entry.indexOf('=');
+    const key = entry.slice(0, separator);
+    if (separator > 0 && HOST_WEB_PORT_KEYS.includes(key)) values.set(key, entry.slice(separator + 1).trim());
+  }
+  const configured = new Map();
+  for (const key of HOST_WEB_PORT_KEYS) {
+    const value = values.get(key) || '';
+    const port = Number(value);
+    if (!/^\d{1,5}$/.test(value) || port < 1 || port > MAX_PORT) continue;
+    configured.set(port, { port, type: 'tcp', source: 'environment', scheme: key === 'HTTPS_PORT' ? 'https' : 'http' });
+  }
+  return [...declared, ...configured.values()];
+}
+
 /** 过滤出 Web 候选端口,并整体判定容器是否像数据库。 */
 export function classifyPorts(container = {}) {
   const published = container.networkMode === 'host'
@@ -49,8 +78,8 @@ export function scanProjectWebPorts(project = {}) {
     const ports = pickWebPorts(candidates);
     if (!ports.length) continue;
     results.push({ containerId: container.id, containerName: container.name, serviceName: container.service || container.name, ports,
-      source: container.networkMode === 'host' ? 'host-exposed' : 'published',
-      httpsPorts: container.networkMode === 'host' ? [443] : (container.ports || []).filter((port) => Number(port.private) === 443 && (!port.type || port.type === 'tcp')).map((port) => Number(port.public)) });
+      source: container.networkMode === 'host' ? ((container.hostPorts || []).some(port => port.source === 'environment') ? 'host-environment' : 'host-exposed') : 'published',
+      httpsPorts: container.networkMode === 'host' ? (container.hostPorts || []).filter(port => port.port === 443 || port.scheme === 'https').map(port => port.port) : (container.ports || []).filter((port) => Number(port.private) === 443 && (!port.type || port.type === 'tcp')).map((port) => Number(port.public)) });
   }
   return results;
 }

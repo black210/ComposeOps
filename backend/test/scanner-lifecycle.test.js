@@ -33,6 +33,24 @@ test('主机网络仅提取 EXPOSE 端口，不向项目列表透出 inspect 环
   assert.deepEqual(project.containers[0].ports, []);
 });
 
+test('主机网络无 EXPOSE 时返回明确的 Web 配置端口，不暴露其他环境信息', async t => {
+  const host = row('optimizer');
+  host.HostConfig = { NetworkMode: 'host' };
+  const bridge = row('bridge');
+  bridge.HostConfig = { NetworkMode: 'bridge' };
+  t.mock.method(local, 'listContainers', async () => [host, bridge]);
+  const inspect = t.mock.method(local, 'getContainer', id => {
+    assert.equal(id, 'optimizer');
+    return { inspect: async () => ({ Config: { Env: ['WEB_PORT=18846', 'AUTH_TOKEN=do-not-return', 'PROXY_PORT=19800'] } }) };
+  });
+  const projects = await scanProjects();
+  assert.deepEqual(projects.find(p => p.projectName === 'optimizer').containers[0].hostPorts,
+    [{ port: 18846, type: 'tcp', source: 'environment', scheme: 'http' }]);
+  assert.equal(inspect.mock.callCount(), 1);
+  assert.equal(JSON.stringify(projects).includes('do-not-return'), false);
+  assert.equal(JSON.stringify(projects).includes('19800'), false);
+});
+
 test('切换节点不复用旧扫描,旧请求保留原节点访问类型且不覆盖当前缓存', async t => {
   let finishLocal;
   t.mock.method(local, 'listContainers', () => new Promise(resolve => { finishLocal = resolve; }));

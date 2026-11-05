@@ -40,4 +40,17 @@ describe('多应用端口展示', () => {
     expect(wrapper.text()).toContain('主机网络（声明）');
     expect(wrapper.get('a').attributes('href')).toBe('http://example.test:8023');
   });
+  it('无 EXPOSE 的主机网络显示配置端口和来源，可点击打开', () => {
+    const wrapper = mount(ContainerPorts, { props: {
+      container: { name: 'optimizer', networkMode: 'host', ports: [], hostPorts: [{ port: 18846, type: 'tcp', source: 'environment', scheme: 'http' }] },
+      links: [{ port: 18846, url: 'http://example.test:18846' }],
+    } });
+    expect(wrapper.text()).toContain('18846/tcp');
+    expect(wrapper.text()).toContain('主机网络（配置）');
+    expect(wrapper.text()).not.toContain('无端口映射');
+    expect(wrapper.get('a').attributes('href')).toBe('http://example.test:18846');
+    expect(wrapper.get('a').attributes('title')).toContain('Web 端口配置');
+    const launcher = mount(WebUiLauncher, { props: { links: [{ containerId: 'a', containerName: 'optimizer', port: 18846, url: 'http://example.test:18846', source: 'host-environment' }] } });
+    expect(launcher.get('a').attributes('title')).toContain('端口来自应用配置');
+  });
 });

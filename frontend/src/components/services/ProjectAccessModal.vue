@@ -6,7 +6,7 @@
     <template #navigation>
       <div class="access-navigation" role="group" aria-label="环境与密钥页签">
         <button :class="{ active: activeTab === 'env' }" :aria-pressed="activeTab === 'env'" :disabled="switching || panel?.switchBlocked || !project.editable"
-                :title="project.editable ? '编辑项目环境变量文件' : '请先启用项目的 Compose 目录能力'" @click="switchTab('env')"><SlidersHorizontal class="h-4 w-4" />环境变量</button>
+                :title="project.editable ? '编辑项目环境变量文件' : '当前节点或项目路径不支持环境变量文件访问'" @click="switchTab('env')"><SlidersHorizontal class="h-4 w-4" />环境变量</button>
         <button :class="{ active: activeTab === 'credentials' }" :aria-pressed="activeTab === 'credentials'" :disabled="switching || panel?.switchBlocked" @click="switchTab('credentials')"><KeyRound class="h-4 w-4" />账号密码</button>
       </div>
     </template>

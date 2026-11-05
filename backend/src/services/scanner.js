@@ -1,7 +1,7 @@
 import { access } from 'fs/promises';
 import path from 'node:path';
 import { getActiveHostType, getActivityDocker } from './docker-hosts.js';
-import { getProjectMountEnabled, getProjectPreference } from '../lib/db.js';
+import { getProjectPreference } from '../lib/db.js';
 import { safeProjectMountPath } from './mount-plan.js';
 import { composeProjectId } from './project-id.js';
 import { extractHostPorts } from './project-ports.js';
@@ -34,7 +34,7 @@ async function isReachable(p) {
  * Owner 来源：myops.owner 标签，缺失归类为 Uncategorized。
  *
  * 权限：所有项目先自动发现。本地已挂载或 SSH 节点上路径安全时 editable=true。
- * 仅有 Docker API 的 TCP 节点不能编辑远端 Compose 文件。未纳管项目不能操作。
+ * 仅有 Docker API 的 TCP 节点不能编辑远端 Compose 文件。全部发现的项目自动管理，目录能力由节点与项目路径决定。
  *
  * @returns {Promise<{owners: string[], groupedByOwner: Object}>}
  */
@@ -101,17 +101,18 @@ let scanCache = { client: null, at: 0, data: null };
 let scanInFlight = null;
 
 function projectSnapshot(data) {
-  // 权限和个人偏好不缓存,授权/撤销必须在下一次访问时立即生效。
+  // 个人偏好不缓存；旧数据库的纳管/目录选择不再决定项目能力。
   return structuredClone(data).map(project => {
     const preference = getProjectPreference(project.id);
-    project.managed = !!preference.managed;
-    project.mountEnabled = getProjectMountEnabled(project.id);
-    project.editable = project.managed && project.mountEnabled && (project.mounted || project.workspaceAvailable);
+    // 保留 managed/mountEnabled 响应字段供既有工具与客户端兼容，所有项目自动可操作。
+    project.managed = true;
+    project.mountEnabled = !!project.workspaceAvailable;
+    project.editable = project.mountEnabled;
     project.composeMode = project.editable ? (project.mounted ? 'direct' : 'workspace') : 'containers';
     project.favorite = !!preference.favorite;
     project.note = preference.note || '';
     return project;
-  }).sort((a, b) => Number(b.managed) - Number(a.managed) || Number(b.favorite) - Number(a.favorite) ||
+  }).sort((a, b) => Number(b.favorite) - Number(a.favorite) ||
     a.owner.localeCompare(b.owner) || a.projectName.localeCompare(b.projectName));
 }
 

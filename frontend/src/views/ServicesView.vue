@@ -1,7 +1,7 @@
 <template>
   <div class="page-shell">
     <div class="page-header">
-      <div><h1 class="page-title">服务总览</h1><p class="page-subtitle">自动发现 {{ store.projects.length }} 个项目 · 已纳管 {{ managedCount }} 个 · {{ containerCount }} 个容器</p></div>
+      <div><h1 class="page-title">服务总览</h1><p class="page-subtitle">自动发现 {{ store.projects.length }} 个项目 · {{ containerCount }} 个容器</p></div>
       <div class="page-actions">
         <span v-if="lastUpdated" class="text-xs text-muted whitespace-nowrap">更新于 {{ lastUpdated }}</span>
         <label class="toggle-label"><input v-model="autoRefresh" type="checkbox" />自动刷新</label>
@@ -46,11 +46,11 @@
         <ChevronDown class="h-4 w-4 shrink-0 text-surface-400 transition-transform" :class="{ '-rotate-90': metricsCollapsed }" />
         <span class="text-sm font-medium text-surface-100">项目指标</span>
         <span v-if="metricsCollapsed" class="min-w-0 truncate text-xs text-muted">
-          纳管 {{ managedCount }} / {{ store.projects.length }} · 健康 {{ healthyCount }} · 需关注 {{ attentionCount }} · 容器 {{ runningContainerCount }}/{{ containerCount }} 运行中 · 健康分 {{ healthScore }}
+          项目 {{ store.projects.length }} · 健康 {{ healthyCount }} · 需关注 {{ attentionCount }} · 容器 {{ runningContainerCount }}/{{ containerCount }} 运行中 · 健康分 {{ healthScore }}
         </span>
       </button>
       <div v-if="!metricsCollapsed" class="metric-grid mt-3">
-        <button class="metric-tile" :class="{ active: filter === 'managed' }" @click="filter = filter === 'managed' ? 'all' : 'managed'"><span class="metric-icon text-blue-300"><Boxes class="h-5 w-5" /></span><span><strong>{{ managedCount }}</strong><small>已纳管项目</small></span><span class="metric-meta">共 {{ store.projects.length }} 个</span></button>
+        <button class="metric-tile" @click="resetFilters"><span class="metric-icon text-blue-300"><Boxes class="h-5 w-5" /></span><span><strong>{{ store.projects.length }}</strong><small>项目总数</small></span><span class="metric-meta">自动发现与管理</span></button>
         <button class="metric-tile" :class="{ active: filter === 'running' }" @click="filter = filter === 'running' ? 'all' : 'running'"><span class="metric-icon text-emerald-300"><CircleCheckBig class="h-5 w-5" /></span><span><strong>{{ healthyCount }}</strong><small>健康运行</small></span><span class="metric-meta">项目状态正常</span></button>
         <button class="metric-tile" :class="{ active: filter === 'attention' }" @click="filter = filter === 'attention' ? 'all' : 'attention'"><span class="metric-icon text-amber-300"><AlertTriangle class="h-5 w-5" /></span><span><strong>{{ attentionCount }}</strong><small>需要关注</small></span><span class="metric-meta">停止、部分异常或不健康</span></button>
         <button class="metric-tile" :class="{ active: filter === 'stopped' }" @click="filter = filter === 'stopped' ? 'all' : 'stopped'"><span class="metric-icon text-surface-300"><Container class="h-5 w-5" /></span><span><strong>{{ runningContainerCount }} / {{ containerCount }}</strong><small>运行中容器</small></span><span class="metric-meta">{{ stoppedContainerCount }} 个未运行</span></button>
@@ -58,14 +58,14 @@
       </div>
     </section>
     <div v-if="store.projects.length" class="toolbar-panel">
-      <label class="search-field"><Search class="h-4 w-4" /><input v-model="searchQuery" placeholder="搜索项目、容器、镜像或路径" /></label>
-      <select v-model="filter" class="input sm:w-40" aria-label="状态筛选"><option value="all">全部项目</option><option value="attention">需要关注</option><option value="running">健康运行</option><option value="stopped">已停止</option><option value="managed">已纳管</option><option value="unmanaged">未纳管</option><option value="favorites">仅收藏</option></select>
+      <label class="search-field"><Search class="h-4 w-4" /><input v-model="searchQuery" placeholder="搜索项目、备注、容器、镜像或路径" /></label>
+      <select v-model="filter" class="input sm:w-40" aria-label="状态筛选"><option value="all">全部项目</option><option value="attention">需要关注</option><option value="running">健康运行</option><option value="stopped">已停止</option><option value="favorites">仅收藏</option></select>
       <select v-model="sort" class="input sm:w-40" aria-label="项目排序"><option value="priority">异常与收藏优先</option><option value="name">按项目名称</option><option value="owner">按项目归属</option></select>
-      <label class="toggle-label whitespace-nowrap"><input type="checkbox" :checked="allVisibleSelected" :disabled="!visibleManagedProjects.length" @change="toggleAllVisible" />选择当前</label>
+      <label class="toggle-label whitespace-nowrap"><input type="checkbox" :checked="allVisibleSelected" :disabled="!visibleProjects.length" @change="toggleAllVisible" />选择当前</label>
       <span class="ml-auto whitespace-nowrap text-muted">显示 {{ visibleProjects.length }} / {{ store.projects.length }}</span>
     </div>
     <BatchOperationsBar v-if="selectedProjects.length" :selected-count="selectedProjects.length" :busy="busy" @run="runBatch" @clear="selectedIds = []" />
-    <ConfirmDialog :show="batchConfirmation.show" :title="'批量' + actionLabel(batchConfirmation.action)" :message="'将对 ' + batchConfirmation.count + ' 个已纳管项目执行“' + actionLabel(batchConfirmation.action) + '”。操作会按顺序执行，失败项目仍会保留在结果中。确认继续?'" tone="warning" :confirm-text="'确认' + actionLabel(batchConfirmation.action)" :busy="batchSubmitting" @confirm="confirmBatch" @cancel="batchConfirmation.show = false" />
+    <ConfirmDialog :show="batchConfirmation.show" :title="'批量' + actionLabel(batchConfirmation.action)" :message="'将对 ' + batchConfirmation.count + ' 个项目执行“' + actionLabel(batchConfirmation.action) + '”。操作会按顺序执行，失败项目仍会保留在结果中。确认继续?'" tone="warning" :confirm-text="'确认' + actionLabel(batchConfirmation.action)" :busy="batchSubmitting" @confirm="confirmBatch" @cancel="batchConfirmation.show = false" />
     <ConfirmDialog :show="!!restartTarget" title="重启项目" :message="`确认重启 ${restartTarget?.projectName || ''}?`" tone="warning" confirm-text="重启" @confirm="confirmKeyboardRestart" @cancel="restartTarget = null" />
     <Skeleton v-if="store.loading && !store.projects.length" variant="cards" :rows="4" label="服务列表加载中" class="flex-1" />
     <EmptyState v-else-if="!store.projects.length" icon="Boxes" title="暂未发现 Compose 项目" description="Docker 中没有带 Compose 标签的项目,或尚未扫描" />
@@ -117,7 +117,7 @@ const route = useRoute();
 const router = useRouter();
 const { openAgent, updateAgentContext } = useAgentConsole();
 const autoRefresh = ref(true); const busy = ref(false); const expandedIds = ref(new Set());
-const searchQuery = ref(''); const filter = ref('managed'); const sort = ref('priority');
+const searchQuery = ref(''); const filter = ref('all'); const sort = ref('priority');
 const selectedIds = ref([]); const updateSettings = ref({ lastResults: [] }); const focusedProject = ref('');
 const accessInitialTab = ref('env');
 const inspection = ref(null); const inspectionLoading = ref(false);
@@ -197,7 +197,6 @@ const output = reactive({ open: false, text: '', action: '', name: '', projectId
 const batchConfirmation = reactive({ show: false, action: '', count: 0 });
 const batchSubmitting = ref(false);
 const containerCount = computed(() => store.projects.reduce((count, project) => count + project.containers.length, 0));
-const managedCount = computed(() => store.projects.filter((project) => project.managed).length);
 const runningContainerCount = computed(() => store.projects.reduce((count, project) => count + project.containers.filter((container) => container.state === 'running').length, 0));
 const stoppedContainerCount = computed(() => containerCount.value - runningContainerCount.value);
 const healthyCount = computed(() => store.projects.filter((project) => !hasAttention(project)).length);
@@ -218,20 +217,19 @@ const visibleProjects = computed(() => {
   const matches = store.projects.filter((project) => (!matcher || matcher(project)) && (!query || searchIndex(project).includes(query)));
   return [...matches].sort(sortComparators[sort.value]);
 });
-const visibleManagedProjects = computed(() => visibleProjects.value.filter((project) => project.managed));
-const selectedProjects = computed(() => store.projects.filter((project) => selectedIds.value.includes(project.id) && project.managed));
-const allVisibleSelected = computed(() => visibleManagedProjects.value.length > 0 && visibleManagedProjects.value.every((project) => selectedIds.value.includes(project.id)));
+const selectedProjects = computed(() => store.projects.filter((project) => selectedIds.value.includes(project.id)));
+const allVisibleSelected = computed(() => visibleProjects.value.length > 0 && visibleProjects.value.every((project) => selectedIds.value.includes(project.id)));
 const completedBatchTasks = computed(() => batchTasks.value.filter((task) => ['success', 'failed'].includes(task.status)).length);
 const batchProgress = computed(() => batchTasks.value.length ? Math.round(completedBatchTasks.value / batchTasks.value.length * 100) : 0);
 
 function refresh(force = false) { return store.refresh(force === true).finally(() => { if (!store.error) lastUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour12: false }); }); }
 function hasAttention(project) { return project.status !== 'running' || project.containers.some((container) => container.health === 'unhealthy'); }
 function searchIndex(project) { return [project.projectName, project.owner, project.workingDir, project.note, ...project.containers.flatMap((container) => [container.name, container.image])].join(' ').toLowerCase(); }
-const statusMatchers = { attention: (p) => hasAttention(p), running: (p) => !hasAttention(p), managed: (p) => p.managed, unmanaged: (p) => !p.managed, favorites: (p) => p.favorite, stopped: (p) => p.containers.some((c) => c.state !== 'running') };
-const sortComparators = { name: (a, b) => a.projectName.localeCompare(b.projectName), owner: (a, b) => a.owner.localeCompare(b.owner) || a.projectName.localeCompare(b.projectName), priority: (a, b) => Number(hasAttention(b)) - Number(hasAttention(a)) || Number(b.favorite) - Number(a.favorite) || Number(b.managed) - Number(a.managed) || a.projectName.localeCompare(b.projectName) };
-function resetFilters() { searchQuery.value = ''; filter.value = 'managed'; sort.value = 'priority'; }
+const statusMatchers = { attention: (p) => hasAttention(p), running: (p) => !hasAttention(p), favorites: (p) => p.favorite, stopped: (p) => p.containers.some((c) => c.state !== 'running') };
+const sortComparators = { name: (a, b) => a.projectName.localeCompare(b.projectName), owner: (a, b) => a.owner.localeCompare(b.owner) || a.projectName.localeCompare(b.projectName), priority: (a, b) => Number(hasAttention(b)) - Number(hasAttention(a)) || Number(b.favorite) - Number(a.favorite) || a.projectName.localeCompare(b.projectName) };
+function resetFilters() { searchQuery.value = ''; filter.value = 'all'; sort.value = 'priority'; }
 function toggleSelection(projectId) { selectedIds.value = selectedIds.value.includes(projectId) ? selectedIds.value.filter((id) => id !== projectId) : [...selectedIds.value, projectId]; }
-function toggleAllVisible() { const visibleIds = visibleManagedProjects.value.map((project) => project.id); selectedIds.value = allVisibleSelected.value ? selectedIds.value.filter((id) => !visibleIds.includes(id)) : [...new Set([...selectedIds.value, ...visibleIds])]; }
+function toggleAllVisible() { const visibleIds = visibleProjects.value.map((project) => project.id); selectedIds.value = allVisibleSelected.value ? selectedIds.value.filter((id) => !visibleIds.includes(id)) : [...new Set([...selectedIds.value, ...visibleIds])]; }
 function toggleExpanded(projectId) { const next = new Set(expandedIds.value); if (next.has(projectId)) next.delete(projectId); else next.add(projectId); expandedIds.value = next; }
 function openProjectUpdate(project) {
   if (busy.value || !project.editable) return;
@@ -347,7 +345,7 @@ async function pollJob(jobId) {
 async function focusProject() {
   const projectId = String(route.query.focus || '');
   if (!projectId || focusedProject.value === projectId || !store.projects.some((project) => project.id === projectId)) return;
-  focusedProject.value = projectId; searchQuery.value = ''; filter.value = store.projects.find((project) => project.id === projectId)?.managed ? 'managed' : 'all';
+  focusedProject.value = projectId; searchQuery.value = ''; filter.value = 'all';
   if (!expandedIds.value.has(projectId)) toggleExpanded(projectId);
   await nextTick(); document.getElementById(`project-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }

@@ -1109,7 +1109,7 @@ async function checkUpdates(force = false, projectId = null) {
 function updateLabel(container) {
   if (container.helper) return '无需检查';
   if (!container.projectId) return '需 Compose 定义';
-  if (container.updateCheckAvailable === false) return '未授权检查';
+  if (container.updateCheckAvailable === false) return '目录不可用';
   const item = updates.value[container.id];
   if (!item) return '尚未检查';
   if (item.hasUpdate) return '可更新';
@@ -1140,7 +1140,7 @@ function retryUpdateTarget() {
 function updateDetail(container) {
   if (container.helper) return '面板临时工作容器';
   if (!container.projectId || container.updateCheckAvailable === false)
-    return container.updateCheckReason || '请先纳管应用并授权 Compose 目录';
+    return container.updateCheckReason || '当前节点或项目目录不支持此操作';
   const item = updates.value[container.id];
   if (item?.status === 'checking') return '正在读取配置或访问镜像仓库，单个应用最长 35 秒';
   if (item?.status === 'queued') return '等待前面的应用检查完成';

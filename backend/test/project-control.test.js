@@ -67,9 +67,9 @@ test('受保护 API 精确控制单个容器，等待执行结果并刷新真实
     assert.equal(states.other, 'running');
     const invalid = await app.inject({ method: 'POST', url, headers, payload: { action: 'up', containerId: 'foreign' } });
     assert.equal(invalid.statusCode, 404);
-    assert.equal((await app.inject({ method: 'POST', url, headers, payload: { action: 'pull', containerId: 'target' } })).statusCode, 403);
+    assert.equal((await app.inject({ method: 'POST', url, headers, payload: { action: 'pull', containerId: 'target' } })).statusCode, 400);
     setProjectPreference(found.id, { managed: false });
-    assert.equal((await app.inject({ method: 'POST', url, headers, payload: { action: 'up', containerId: 'target' } })).statusCode, 403);
+    assert.equal((await app.inject({ method: 'POST', url, headers, payload: { action: 'up', containerId: 'target' } })).statusCode, 200);
   } finally { await app.close(); invalidateScanCache(); }
 });
 

@@ -81,9 +81,9 @@ const socket = useWebSocket(
 const connected = socket.connected;
 const containers = computed(() => projects.value.find((p) => p.id === projectId.value)?.containers || []);
 // 终端刻意不自动重连(maxReconnectAttempts: 0),下拉刷新只重读项目列表,不动现有会话。
-usePullRefresh(async () => { projects.value = (await api.getProjects()).projects.filter((project) => project.managed); });
+usePullRefresh(async () => { projects.value = (await api.getProjects()).projects; });
 onMounted(async () => {
-  [projects.value, capabilities.value] = await Promise.all([api.getProjects().then((r) => r.projects.filter((project) => project.managed)), api.getCapabilities()]);
+  [projects.value, capabilities.value] = await Promise.all([api.getProjects().then((r) => r.projects), api.getCapabilities()]);
   window.addEventListener('composeops:host-changed', onHostChanged);
   term = new Terminal({ fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace', fontSize: 13, cursorBlink: true, theme: terminalTheme.value }); fit = new FitAddon(); term.loadAddon(fit); term.open(termEl.value); nextTick(() => { fit.fit(); termReady.value = true; });
   term.onData((data) => socket.send(data)); term.onResize(({ cols, rows }) => socket.send(JSON.stringify({ type: 'resize', cols, rows })));
@@ -97,6 +97,6 @@ function sendKey(char) {
   socket.send(char);
   term?.focus();
 }
-function onHostChanged() { disconnect(); projects.value = []; void api.getProjects().then((r) => { projects.value = r.projects.filter((project) => project.managed); }).catch(() => {}); }
+function onHostChanged() { disconnect(); projects.value = []; void api.getProjects().then((r) => { projects.value = r.projects; }).catch(() => {}); }
 onBeforeUnmount(() => { disconnect(); resizeObserver?.disconnect(); term?.dispose(); window.removeEventListener('composeops:host-changed', onHostChanged); });
 </script>

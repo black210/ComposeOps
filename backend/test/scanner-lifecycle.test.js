@@ -94,18 +94,23 @@ test('缓存与并发调用返回独立快照,调用方修改容器不污染后�
   assert.equal(cached[0].containers[0].name, 'test');
 });
 
-test('纳管、目录权限及备注变更立即生效,不等待 Docker 扫描缓存过期', async t => {
+test('所有项目自动可用，旧白名单不影响能力，备注收藏立即生效且不等待扫描缓存', async t => {
   const list = t.mock.method(local, 'listContainers', async () => [row('preferences')]);
   const [project] = await scanProjects();
-  setProjectPreference(project.id, { managed: true, mountEnabled: true, note: '新备注' });
+  assert.equal(project.managed, true);
+  assert.equal(project.editable, true);
+  setProjectPreference(project.id, { managed: false, mountEnabled: false, note: '新备注', favorite: true });
   let current = (await scanProjects())[0];
   assert.equal(current.managed, true);
   assert.equal(current.editable, true);
   assert.equal(current.note, '新备注');
   setProjectPreference(project.id, { managed: false });
   current = (await scanProjects())[0];
-  assert.equal(current.managed, false);
-  assert.equal(current.editable, false);
+  assert.equal(current.managed, true);
+  assert.equal(current.mountEnabled, true);
+  assert.equal(current.editable, true);
+  assert.equal(current.favorite, true);
+  assert.equal(current.note, '新备注');
   assert.equal(list.mock.callCount(), 1);
 });
 
@@ -118,7 +123,7 @@ test('项目操作完成后立即读取真实容器状态', async t => {
   }));
   const [project] = await scanProjects();
   assert.equal(project.status, 'stopped');
-  const prepared = await prepareProjectAction({ ...project, managed: true, mountEnabled: false }, 'up');
+  const prepared = await prepareProjectAction(project, 'up', 'action');
   assert.equal(await prepared.run(), 0);
   assert.equal((await scanProjects())[0].status, 'running');
 });
@@ -169,4 +174,19 @@ test('运行状态 inspect 最多并发 6 个，每个容器只读取一次且�
   await scanProjects();
   assert.equal(reads, 15);
   assert.equal(max, 6);
+});
+
+
+test('后来发现的项目直接可用；过宽目录和跨目录配置不自动开放文件能力', async t => {
+  const broad = row('broad'); broad.Labels['com.docker.compose.project.working_dir'] = '/';
+  const outside = row('outside'); outside.Labels['com.docker.compose.project.config_files'] = '/etc/compose.yaml';
+  t.mock.method(local, 'listContainers', async () => [row('newly-discovered'), broad, outside]);
+  const projects = await scanProjects();
+  assert.ok(projects.every(project => project.managed));
+  assert.equal(projects.find(project => project.projectName === 'newly-discovered').editable, true);
+  for (const name of ['broad', 'outside']) {
+    const project = projects.find(project => project.projectName === name);
+    assert.equal(project.mountEnabled, false);
+    assert.equal(project.composeMode, 'containers');
+  }
 });

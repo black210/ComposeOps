@@ -56,8 +56,9 @@ test('API boundary: invalid YAML and stale Compose writes are rejected; successf
   const projectName = 'isolated-api-boundary-project'; const projectId = composeProjectId(projectDir, projectName);
   const container = { Id: 'isolated-api-boundary-container', Names: ['/isolated-api-boundary-web'], State: 'running', Status: 'Up', Image: 'nginx:stable', Created: 1, Ports: [], Labels: { 'com.docker.compose.project': projectName, 'com.docker.compose.project.working_dir': projectDir, 'com.docker.compose.project.config_files': composeFile, 'myops.owner': 'api-test' } };
   t.mock.method(docker, 'listContainers', async () => [container]); invalidateScanCache();
-  const management = await app.inject({ method: 'PUT', url: '/api/v1/projects/management', headers: headers(), payload: { projectIds: [projectId], mountProjectIds: [projectId] } });
-  assert.equal(management.statusCode, 200, management.body); invalidateScanCache();
+  const list = await app.inject({ method: 'GET', url: '/api/v1/projects', headers: headers() });
+  assert.equal(list.json().projects[0].managed, true);
+  assert.equal(list.json().projects[0].editable, true);
   const invalid = await app.inject({ method: 'PUT', url: '/api/v1/projects/' + projectId + '/compose', headers: headers(), payload: { content: 'services: [', expectedContent: original } });
   assert.equal(invalid.statusCode, 422, invalid.body); assert.equal(fs.readFileSync(composeFile, 'utf8'), original);
   const stale = await app.inject({ method: 'PUT', url: '/api/v1/projects/' + projectId + '/compose', headers: headers(), payload: { content: 'services:\n  web:\n    image: nginx:latest\n', expectedContent: 'stale version' } });
@@ -125,4 +126,24 @@ test('API boundary: 通知设置支持全部 7 个渠道回存(含钉钉/飞书)
   const save = await app.inject({ method: 'PUT', url: '/api/v1/personal/notifications', headers: headers(), payload: { enabled: false, channels } });
   assert.equal(save.statusCode, 200, save.body);
   assert.equal(save.json().channels.length, 7);
+});
+
+
+test('自动管理不需要选择，历史白名单接口无法关闭项目且保留备注收藏', async t => {
+  const container = { Id: 'auto-api-container', Names: ['/auto-api'], State: 'exited', Labels: { 'com.docker.compose.project': 'auto-api', 'com.docker.compose.project.working_dir': tempDir } };
+  t.mock.method(docker, 'listContainers', async () => [container]); invalidateScanCache();
+  const id = composeProjectId(tempDir, 'auto-api');
+  const saved = await app.inject({ method: 'PATCH', url: '/api/v1/projects/' + id + '/preferences', headers: headers(), payload: { note: '保留备注', favorite: true } });
+  assert.equal(saved.statusCode, 200);
+  for (const route of ['management', 'mounts']) {
+    const response = await app.inject({ method: 'PUT', url: '/api/v1/projects/' + route, headers: headers(), payload: { projectIds: [] } });
+    assert.equal(response.statusCode, 410);
+    assert.equal(response.json().error, 'automatic_project_management');
+  }
+  const current = await app.inject({ method: 'GET', url: '/api/v1/projects/' + id, headers: headers() });
+  assert.equal(current.json().managed, true);
+  assert.equal(current.json().note, '保留备注');
+  assert.equal(current.json().favorite, true);
+  const activity = await app.inject({ method: 'GET', url: '/api/v1/projects/' + id + '/activity', headers: headers() });
+  assert.equal(activity.statusCode, 200);
 });

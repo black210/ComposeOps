@@ -1,7 +1,7 @@
 import { findProject, scanProjects } from '../services/scanner.js';
 import { buildMountPlan } from '../services/mount-plan.js';
 import { readCompose, saveCompose } from '../services/compose-runner.js';
-import { pruneWorkspaceRunners, readWorkspaceCompose, saveWorkspaceCompose } from '../services/compose-workspace.js';
+import { readWorkspaceCompose, saveWorkspaceCompose } from '../services/compose-workspace.js';
 import { prepareProjectAction } from '../services/project-action-runner.js';
 import { readProjectEnv, saveProjectEnv, applyProjectEnv, assertEnvAccess, listProjectEnvFiles, normalizeEnvFileName } from '../services/project-env.js';
 import { listProjectEnvBackups, restoreProjectEnvBackup } from '../services/project-env-backups.js';
@@ -17,7 +17,6 @@ import {
   getComposeBackup,
   listComposeBackups,
   listProjectOperations,
-  setProjectManagement,
   setProjectPreference,
 } from '../lib/db.js';
 
@@ -29,7 +28,7 @@ async function projectOr404(id, reply) {
 
 function requireManaged(project, reply) {
   if (!project.managed) {
-    reply.code(403).send({ error: 'project_not_managed', message: '项目尚未加入管理，请先在项目纳管中勾选' });
+    reply.code(403).send({ error: 'project_not_managed', message: '项目不存在或当前不可见' });
     return false;
   }
   return true;
@@ -38,7 +37,7 @@ function requireManaged(project, reply) {
 function requireEditable(project, reply) {
   if (!requireManaged(project, reply)) return false;
   if (!project.mountEnabled) {
-    reply.code(403).send({ error: 'compose_access_not_enabled', message: '尚未为该项目启用 Compose 目录能力' });
+    reply.code(403).send({ error: 'compose_access_not_enabled', message: '当前节点或项目路径不支持 Compose 目录访问' });
     return false;
   }
   if (!project.editable) {
@@ -50,17 +49,13 @@ function requireEditable(project, reply) {
 
 /**
  * 本文件的 schema 一律不接管服务端已有的语义,几处必须留手:
- * 1. projectIds/mountProjectIds 的数组元素刻意不声明 items.type —— coerceTypes 会把
- *    [123] 悄悄转成 ['123'],让处理函数的 `typeof id !== 'string'` 检查形同虚设,
- *    invalid_project_ids 也就永远返回不了;这里只收数组本身与长度上限(与处理函数的
- *    1000 对齐),元素类型仍由处理函数判定;
- * 2. content/favorite/note/containerId 都不设 required —— 处理函数各自返回
+ * 1. content/favorite/note/containerId 都不设 required —— 处理函数各自返回
  *    invalid_content / invalid_favorite / invalid_note / missing_container 机器码;
- * 3. action 不设 enum:compose-runner 的 ACTIONS 是唯一事实来源,
+ * 2. action 不设 enum:compose-runner 的 ACTIONS 是唯一事实来源,
  *    未知 action 由 assertProjectActionAllowed 抛出 unsupported_action;
  *    抄一份 enum 进 schema 只会多出一处必然漂移的规则;
- * 4. force 收 string —— 处理函数按 `=== '1'` 比较,声明成数字会让判断永远为假;
- * 5. interval/limit/fileIndex 越界由处理函数与 db.js 的 clamp 兜住,schema 只挡非数值。
+ * 3. force 收 string —— 处理函数按 `=== '1'` 比较,声明成数字会让判断永远为假;
+ * 4. interval/limit/fileIndex 越界由处理函数与 db.js 的 clamp 兜住,schema 只挡非数值。
  *
  * env 的 raw/entries 承载 .env 明文(可能含密钥),故本文件不声明任何 response schema,
  * 这些字段只走请求体。
@@ -82,13 +77,10 @@ const backupParams = {
   },
 };
 
-// 元素类型交给处理函数:见文件头第 1 条。
-const projectIdList = { type: 'array', maxItems: 1000 };
-
 // YAML 正文与 .env 明文都可能很大,上限只用于挡住畸形巨包。
 const CONTENT_MAX = 1048576;
 
-// 只挡非数值:越界与缺省由处理函数的 `Number(x) || 0` 与下游读取器兜住(见文件头第 5 条)。
+// 只挡非数值:越界与缺省由处理函数的 `Number(x) || 0` 与下游读取器兜住(见文件头第 4 条)。
 const fileIndexField = { type: 'number' };
 
 export default async function projectRoutes(fastify) {
@@ -97,65 +89,13 @@ export default async function projectRoutes(fastify) {
 
   fastify.get('/mount-plan', async () => buildMountPlan(await scanProjects()));
 
-  fastify.put('/management', {
-    schema: {
-      body: {
-        type: 'object',
-        additionalProperties: false,
-        properties: { projectIds: projectIdList, mountProjectIds: projectIdList },
-      },
-    },
-  }, async (request, reply) => {
-    const projectIds = request.body?.projectIds;
-    const mountProjectIds = request.body?.mountProjectIds ?? [];
-    if (!Array.isArray(projectIds) || projectIds.length > 1000 ||
-        projectIds.some((id) => typeof id !== 'string') ||
-        !Array.isArray(mountProjectIds) || mountProjectIds.length > 1000 ||
-        mountProjectIds.some((id) => typeof id !== 'string')) {
-      return reply.code(400).send({ error: 'invalid_project_ids', message: '项目选择格式无效' });
-    }
-    const projects = await scanProjects();
-    const discoveredIds = projects.map((project) => project.id);
-    const discoveredSet = new Set(discoveredIds);
-    if (projectIds.some((id) => !discoveredSet.has(id)) || mountProjectIds.some((id) => !discoveredSet.has(id))) {
-      return reply.code(400).send({ error: 'unknown_project', message: '选择中包含当前未发现的项目' });
-    }
-    const selectedIds = [...new Set(projectIds)];
-    const selectedMountIds = [...new Set(mountProjectIds)].filter((id) => selectedIds.includes(id));
-    const result = setProjectManagement(discoveredIds, selectedIds, selectedMountIds);
-    pruneWorkspaceRunners(selectedMountIds);
-    addOperation({
-      action: 'projects.management',
-      status: 'success',
-      detail: projects.filter((project) => selectedIds.includes(project.id)).map((project) => project.projectName).join(', '),
-    });
-    return result;
-  });
-
-  // 目录能力是纳管权限的子集。保留独立端点，便于设置页只调整挂载选择。
-  fastify.put('/mounts', {
-    schema: {
-      body: { type: 'object', additionalProperties: false, properties: { projectIds: projectIdList } },
-    },
-  }, async (request, reply) => {
-    const mountProjectIds = request.body?.projectIds;
-    if (!Array.isArray(mountProjectIds) || mountProjectIds.length > 1000 ||
-        mountProjectIds.some((id) => typeof id !== 'string')) {
-      return reply.code(400).send({ error: 'invalid_project_ids', message: '项目选择格式无效' });
-    }
-    const projects = await scanProjects();
-    const discoveredIds = projects.map((project) => project.id);
-    const discoveredSet = new Set(discoveredIds);
-    if (mountProjectIds.some((id) => !discoveredSet.has(id))) {
-      return reply.code(400).send({ error: 'unknown_project', message: '选择中包含当前未发现的项目' });
-    }
-    const managedIds = projects.filter((project) => project.managed).map((project) => project.id);
-    const selectedMountIds = [...new Set(mountProjectIds)].filter((id) => managedIds.includes(id));
-    const result = setProjectManagement(discoveredIds, managedIds, selectedMountIds);
-    pruneWorkspaceRunners(selectedMountIds);
-    addOperation({ action: 'projects.mounts', status: 'success', detail: selectedMountIds.join(', ') });
-    return result;
-  });
+  // 旧客户端不能通过历史白名单关闭自动管理，也不修改备注/收藏等个人数据。
+  for (const route of ['/management', '/mounts']) {
+    fastify.put(route, async (_request, reply) => reply.code(410).send({
+      error: 'automatic_project_management',
+      message: '所有项目已自动管理，Compose 目录能力自动识别，无需保存选择',
+    }));
+  }
 
   fastify.get('/:id', { schema: { params: idParams } }, async (request, reply) => {
     const project = await projectOr404(request.params.id, reply);

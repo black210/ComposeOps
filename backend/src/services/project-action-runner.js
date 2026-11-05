@@ -11,7 +11,7 @@ export function assertProjectActionAllowed(project, action) {
   }
   if (!project.managed) throw Object.assign(new Error('项目尚未加入管理'), { statusCode: 403 });
   if (!project.mountEnabled && !supportsContainerAction(action)) {
-    throw Object.assign(new Error('尚未为该项目启用 Compose 目录能力'), { statusCode: 403 });
+    throw Object.assign(new Error('当前节点或项目路径不支持 Compose 目录访问'), { statusCode: 403 });
   }
   if (project.mountEnabled && !project.editable && !supportsContainerAction(action)) {
     throw Object.assign(new Error('Compose 项目路径缺失或权限范围过宽，无法安全挂载'), { statusCode: 409 });

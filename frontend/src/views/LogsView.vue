@@ -252,7 +252,7 @@ async function reloadProjects() {
     error.value = result.reason?.message || '项目列表刷新失败,请稍后重试';
     return;
   }
-  projects.value = (result.value?.projects || []).filter(project => project.managed);
+  projects.value = (result.value?.projects || []);
   error.value = '';
   openStats();
   if (canConnect.value && projects.value.some(project => project.id === projectId.value)) connect();

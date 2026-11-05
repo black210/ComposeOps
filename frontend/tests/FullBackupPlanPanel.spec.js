@@ -21,7 +21,7 @@ describe('完整备份范围预检', () => {
   it('显示中文范围与缺项，清楚区分清单和备份产物', async () => {
     wrapper = mount(FullBackupPlanPanel);
     await flushPromises();
-    expect(wrapper.text()).not.toContain('Hidden');
+    expect(wrapper.text()).toContain('Hidden');
     await wrapper.get('select').setValue('p1');
     await wrapper.findAll('button')[0].trigger('click');
     await flushPromises();

@@ -2,7 +2,7 @@ import { getActivityDocker, getActiveHostId, onActiveHostChange } from './docker
 import { createLineDecoder } from '../lib/line-decoder.js';
 import { scanProjects } from './scanner.js';
 import { composeProjectId } from './project-id.js';
-import { addContainerStateEvent, getProjectPreference } from '../lib/db.js';
+import { addContainerStateEvent } from '../lib/db.js';
 
 /**
  * 容器状态变化实时推送服务
@@ -162,7 +162,6 @@ function resolveProjectFromLabels(attributes = {}) {
   if (!projectName) return null;
   const workingDir = attributes[COMPOSE_WORKDIR_LABEL] || '';
   const projectId = composeProjectId(workingDir, projectName);
-  if (!getProjectPreference(projectId).managed) return null;
   return { id: projectId, projectName };
 }
 
@@ -182,7 +181,7 @@ async function handleDockerEvent(event, current = () => true) {
   let projects;
   try {
     const result = await scanProjects();
-    projects = result.filter((p) => p.managed); // 仅推送已纳管项目
+    projects = result; // 自动覆盖当前节点发现的全部 Compose 项目
   } catch (error) {
     console.error('[container-events] 扫描项目失败:', error.message);
     return;
@@ -196,7 +195,7 @@ async function handleDockerEvent(event, current = () => true) {
   ) || resolveProjectFromLabels(attributes);
 
   if (!matchedProject) {
-    // 容器不属于任何纳管项目,忽略
+    // 容器不属于任何 Compose 项目,忽略
     return;
   }
 
@@ -219,7 +218,7 @@ async function handleDockerEvent(event, current = () => true) {
 
   // 广播给所有订阅者
   broadcastEvent(payload);
-  // Docker Event 只路由已纳管项目；eventId 包含 Host/容器/动作/daemon 时间戳，跨重连可去重。
+  // Docker Event 只路由带 Compose 项目标识的事件；eventId 包含 Host/容器/动作/daemon 时间戳，跨重连可去重。
   const eventId = 'docker:' + getActiveHostId() + ':' + containerId + ':' + action + ':' + String(event.timeNano || event.time || payload.timestamp);
   void import('./event-router.js').then(({ routeWorkflowEvent }) => routeWorkflowEvent({
     ...payload,

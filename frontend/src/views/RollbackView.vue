@@ -182,7 +182,7 @@ const confirmTarget = ref(null);
 let pendingAction = null;
 let rollbackController = null;
 
-const rollbackableProjects = computed(() => store.projects.filter((p) => p.managed && p.editable && p.status !== 'running'));
+const rollbackableProjects = computed(() => store.projects.filter((p) => p.editable && p.status !== 'running'));
 const rollbackableProjectCount = computed(() => rollbackableProjects.value.length);
 
 function reasonLabel(reason) {
@@ -237,7 +237,7 @@ async function loadComposeBackups(requestId = loadRequestId, requestedProjectId 
   const projects = (requestedProjectId
     ? store.projects.filter((p) => p.id === requestedProjectId)
     : store.projects
-  ).filter((project) => project.managed);
+  );
   const results = await Promise.allSettled(projects.map((p) => api.getBackups(p.id)));
   if (requestId !== loadRequestId) return;
   const backups = [];

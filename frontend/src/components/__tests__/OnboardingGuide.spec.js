@@ -16,9 +16,9 @@ beforeEach(async () => {
 });
 afterEach(() => { wrapper?.unmount(); wrapper = null; document.body.innerHTML = ''; });
 function render() { wrapper = mount(OnboardingGuide, { global: { plugins: [router], stubs: { RouterLink: { template: '<a><slot /></a>' } } } }); }
-it('发现未纳管项目仍显示入门，并明确 AI 可选', async () => {
+it('发现项目自动计数并明确 AI 可选', async () => {
   render(); await flushPromises();
-  expect(document.body.textContent).toContain('自动发现不会自动授权');
+  expect(document.body.textContent).toContain('所有 Compose 项目自动发现并加入管理');
   expect(document.body.textContent).toContain('AI 是可选能力');
 });
 it('关闭后可从导航重新打开并刷新进度', async () => {
@@ -28,7 +28,7 @@ it('关闭后可从导航重新打开并刷新进度', async () => {
   expect(localStorage.getItem('composeops:onboarding-dismissed')).toBe('1');
   api.getProjects.mockResolvedValue([{ managed: true }]);
   window.dispatchEvent(new CustomEvent('composeops:show-onboarding')); await flushPromises();
-  expect(document.body.textContent).toContain('已有 1 个纳管项目');
+  expect(document.body.textContent).toContain('已发现 1 个项目');
 });
 it('部分配置读取失败仍保留导航，已关闭的指南不自动弹出', async () => {
   localStorage.setItem('composeops:onboarding-dismissed', '1');
@@ -37,7 +37,7 @@ it('部分配置读取失败仍保留导航，已关闭的指南不自动弹出'
   api.getAiConfig.mockRejectedValue(new Error('offline'));
   window.dispatchEvent(new CustomEvent('composeops:show-onboarding')); await flushPromises();
   expect(document.body.textContent).toContain('暂时无法检查全部配置');
-  expect(document.body.textContent).toContain('设置项目权限');
+  expect(document.body.textContent).toContain('查看项目');
 });
 it('卸载后解除事件监听，未完成请求不会重新打开指南', async () => {
   let resolve;

@@ -2,7 +2,7 @@
   <article :id="`project-${project.id}`" class="card svc-card" :class="{ 'svc-card--expanded': expanded, 'svc-card--attention': attention, 'ring-1 ring-accent': focused }">
     <header class="svc-card__header">
       <div class="svc-card__selection">
-        <input type="checkbox" class="accent-accent" :checked="selected" :disabled="!project.managed || busy" :aria-label="`选择 ${project.projectName}`" @click.stop @change="$emit('toggle-select')" />
+        <input type="checkbox" class="accent-accent" :checked="selected" :disabled="busy" :aria-label="`选择 ${project.projectName}`" @click.stop @change="$emit('toggle-select')" />
         <button class="icon-btn" :title="project.favorite ? '取消收藏' : '收藏项目'" :aria-label="project.favorite ? '取消收藏' : '收藏项目'" @click="toggleFavorite(project)">
           <Star class="w-4 h-4" :class="project.favorite ? 'fill-amber-400 text-amber-400' : ''" />
         </button>
@@ -11,7 +11,7 @@
         <span class="svc-card__identity">
           <span class="svc-card__title-line">
             <span class="svc-card__name">{{ project.projectName }}</span>
-            <span class="svc-card__managed" :class="{ 'svc-card__managed--inactive': !project.managed }">{{ project.managed ? '已纳管' : '未纳管' }}</span>
+            <span v-if="project.note?.trim()" class="svc-card__remark" :title="project.note">{{ project.note }}</span>
             <span v-if="imageState === 'updated'" class="svc-card__update">镜像待应用</span>
             <span v-else-if="imageState === 'failed'" class="svc-card__update">镜像检查失败</span>
           </span>
@@ -30,29 +30,30 @@
       <div class="svc-card__utilities">
         <button v-if="updateInfo?.hasUpdate" class="icon-btn text-amber-400" title="检测到镜像可更新，点击升级" aria-label="升级项目" @click.stop="$emit('upgrade')"><Sparkles class="h-4 w-4" /></button>
         <button class="icon-btn" title="账号密码" aria-label="管理账号密码" @click="$emit('credentials')"><KeyRound class="h-4 w-4" /></button>
-        <button class="icon-btn" title="编辑备注" aria-label="编辑备注" @click="editNote(project)"><Pencil class="h-4 w-4" /></button>
+        <button class="icon-btn" title="编辑备注" aria-label="编辑备注" :disabled="noteSaving" @click="editNote(project)"><Pencil class="h-4 w-4" /></button>
       </div>
     </header>
+    <p v-if="noteError" class="alert-error mx-3 mb-3" role="alert">{{ noteError }}</p>
     <div v-if="webuiLinks.length" class="svc-card__access"><WebUiLauncher :links="webuiLinks" /></div>
 
     <div v-if="expanded" class="svc-card__details">
       <div class="svc-card__toolbar">
         <div class="svc-card__lifecycle" aria-label="项目启停">
-          <button class="btn-primary" :disabled="!project.managed || locked" :title="project.editable ? '通过 Docker Compose 启动' : '启动项目中已有的容器'" @click="trigger('up')"><Play class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'up' }" />启动</button>
-          <button class="btn-secondary" :disabled="!project.managed || locked" title="重启现有容器，沿用当前镜像；应用新镜像请到运维页更新" @click="trigger('restart')"><RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'restart' }" />重启</button>
-          <button class="btn-secondary svc-card__stop" :disabled="!project.managed || locked" @click="trigger('stop')"><Square class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'stop' }" />停止</button>
+          <button class="btn-primary" :disabled="locked" :title="project.editable ? '通过 Docker Compose 启动' : '启动项目中已有的容器'" @click="trigger('up')"><Play class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'up' }" />启动</button>
+          <button class="btn-secondary" :disabled="locked" title="重启现有容器，沿用当前镜像；应用新镜像请到运维页更新" @click="trigger('restart')"><RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'restart' }" />重启</button>
+          <button class="btn-secondary svc-card__stop" :disabled="locked" @click="trigger('stop')"><Square class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'stop' }" />停止</button>
           <button class="btn-secondary" :disabled="!project.editable || locked" title="按当前 Compose 配置重建应用，使用本地镜像，不备份、不拉取镜像" @click="$emit('rebuild')"><RefreshCw class="h-3.5 w-3.5" />重建</button>
         </div>
         <div class="svc-card__tools">
-          <button class="btn-ghost" :disabled="!project.managed || locked" @click="trigger('ps')"><ListTree class="h-3.5 w-3.5" />状态</button>
-          <button class="btn-ghost" :disabled="!project.editable || locked" title="需在项目纳管中勾选 Compose" @click="trigger('pull')"><Download class="h-3.5 w-3.5" :class="{ 'animate-spin': actionRunning === 'pull' }" />拉取</button>
+          <button class="btn-ghost" :disabled="locked" @click="trigger('ps')"><ListTree class="h-3.5 w-3.5" />状态</button>
+          <button class="btn-ghost" :disabled="!project.editable || locked" title="需有可用的 Compose 项目目录" @click="trigger('pull')"><Download class="h-3.5 w-3.5" :class="{ 'animate-spin': actionRunning === 'pull' }" />拉取</button>
           <button v-if="updateInfo?.hasUpdate" class="btn-ghost" :disabled="!project.editable || locked" title="自动完整备份成功后更新镜像" @click="$emit('upgrade')"><Sparkles class="h-3.5 w-3.5" />更新</button>
           <router-link class="btn-ghost" :class="{ 'pointer-events-none opacity-40': !project.editable }" :to="`/compose?projectId=${project.id}`"><FileCode2 class="h-3.5 w-3.5" />配置</router-link>
           <button class="btn-ghost" :disabled="busy" title="维护环境变量和账号密码" @click="$emit('env')"><KeyRound class="h-3.5 w-3.5" />环境与密钥</button>
-          <button class="btn-ghost" :disabled="!project.managed || busy" @click="$emit('activity')"><History class="h-3.5 w-3.5" />活动</button>
-          <button v-if="dbContainers.length" class="btn-ghost" :disabled="!project.managed || busy" title="导出数据库备份并下载" @click="$emit('db-dump')"><Database class="h-3.5 w-3.5" />备份数据库</button>
+          <button class="btn-ghost" :disabled="busy" @click="$emit('activity')"><History class="h-3.5 w-3.5" />活动</button>
+          <button v-if="dbContainers.length" class="btn-ghost" :disabled="busy" title="导出数据库备份并下载" @click="$emit('db-dump')"><Database class="h-3.5 w-3.5" />备份数据库</button>
         </div>
-        <span v-if="project.managed" class="svc-card__mode">{{ project.editable ? 'Compose 模式' : '现有容器模式' }}</span>
+        <span class="svc-card__mode">{{ project.editable ? 'Compose 模式' : '现有容器模式' }}</span>
       </div>
 
       <div v-if="dependencyText || envPreview.length || project.note" class="svc-card__context">
@@ -66,15 +67,11 @@
         <p v-if="project.note" class="svc-card__note">{{ project.note }}</p>
       </div>
 
-      <div v-if="!project.managed" class="alert-warning flex flex-col sm:flex-row sm:items-center gap-2">
-        <span class="flex-1">项目尚未纳管，所有控制与容器入口均已禁用。</span>
-        <router-link class="btn-ghost shrink-0" :to="`/settings?tab=mounts&projectId=${project.id}`"><FolderCog class="h-4 w-4" />项目纳管</router-link>
-      </div>
-      <div v-else-if="!project.editable" class="alert-warning flex flex-col sm:flex-row sm:items-center gap-2">
+      <div v-if="!project.editable" class="alert-warning flex flex-col sm:flex-row sm:items-center gap-2">
         <span v-if="project.mountState === 'remote_api_only'" class="flex-1">当前节点只有 Docker API、没有 SSH，无法编辑远端 Compose 文件。容器启停、日志和终端仍可用。</span>
         <template v-else>
-          <span class="flex-1">当前可控制已有容器；请勾选 Compose 目录并应用挂载，解锁拉取、创建缺失服务和配置编辑。</span>
-          <router-link class="btn-ghost shrink-0" :to="`/settings?tab=mounts&projectId=${project.id}`"><FolderCog class="h-4 w-4" />选择 Compose 目录</router-link>
+          <span class="flex-1">Compose 项目目录缺失或路径不可用，当前可控制已有容器。</span>
+          <router-link class="btn-ghost shrink-0" :to="`/settings?tab=mounts&projectId=${project.id}`"><FolderCog class="h-4 w-4" />查看目录状态</router-link>
         </template>
       </div>
 
@@ -95,14 +92,14 @@
           <SparklineChart v-if="metrics[container.id]?.history?.length >= 2" :cpu="metrics[container.id].history.map((point) => point.cpuPercent)" :mem="metrics[container.id].history.map((point) => point.memPercent)" class="svc-container__sparkline" />
           <div class="svc-container__actions">
             <div class="svc-container__lifecycle" :aria-label="`${container.name} 启停`">
-              <button v-if="!['running', 'restarting'].includes(container.state)" class="btn-ghost" :disabled="!project.managed || locked" :aria-label="`${container.state === 'paused' ? '恢复' : '启动'} ${container.name}`" @click="triggerContainer(container, 'up')"><LoaderCircle v-if="actionContainerId === container.id && actionRunning === 'up'" class="h-3.5 w-3.5 animate-spin" /><Play v-else class="h-3.5 w-3.5" />{{ container.state === 'paused' ? '恢复' : '启动' }}</button>
-              <button v-if="['running', 'paused', 'restarting'].includes(container.state)" class="btn-ghost svc-container__stop" :disabled="!project.managed || locked" :aria-label="`停止 ${container.name}`" @click="triggerContainer(container, 'stop')"><LoaderCircle v-if="actionContainerId === container.id && actionRunning === 'stop'" class="h-3.5 w-3.5 animate-spin" /><Square v-else class="h-3.5 w-3.5" />停止</button>
-              <button class="btn-ghost" :disabled="!project.managed || locked" :aria-label="`重启 ${container.name}`" title="重启现有容器，不会拉取或切换镜像" @click="triggerContainer(container, 'restart')"><RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': actionContainerId === container.id && actionRunning === 'restart' }" />重启</button>
+              <button v-if="!['running', 'restarting'].includes(container.state)" class="btn-ghost" :disabled="locked" :aria-label="`${container.state === 'paused' ? '恢复' : '启动'} ${container.name}`" @click="triggerContainer(container, 'up')"><LoaderCircle v-if="actionContainerId === container.id && actionRunning === 'up'" class="h-3.5 w-3.5 animate-spin" /><Play v-else class="h-3.5 w-3.5" />{{ container.state === 'paused' ? '恢复' : '启动' }}</button>
+              <button v-if="['running', 'paused', 'restarting'].includes(container.state)" class="btn-ghost svc-container__stop" :disabled="locked" :aria-label="`停止 ${container.name}`" @click="triggerContainer(container, 'stop')"><LoaderCircle v-if="actionContainerId === container.id && actionRunning === 'stop'" class="h-3.5 w-3.5 animate-spin" /><Square v-else class="h-3.5 w-3.5" />停止</button>
+              <button class="btn-ghost" :disabled="locked" :aria-label="`重启 ${container.name}`" title="重启现有容器，不会拉取或切换镜像" @click="triggerContainer(container, 'restart')"><RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': actionContainerId === container.id && actionRunning === 'restart' }" />重启</button>
             </div>
-            <router-link class="icon-btn" :class="{ 'pointer-events-none opacity-40': !project.managed }" title="实时日志" aria-label="实时日志" :to="{ path: '/logs', query: { projectId: project.id, containerId: container.id, from: 'services' } }"><ScrollText class="h-4 w-4" /></router-link>
-            <router-link v-if="dbContainers.length" class="icon-btn" :class="{ 'pointer-events-none opacity-40': !project.managed }" title="聚合日志（所有容器）" aria-label="聚合日志" :to="{ path: '/logs', query: { projectId: project.id, from: 'services' } }"><Layers class="h-4 w-4" /></router-link>
-            <router-link class="icon-btn" :class="{ 'pointer-events-none opacity-40': !project.managed }" title="容器终端" aria-label="容器终端" :to="`/shell?projectId=${project.id}&containerId=${container.id}`"><TerminalSquare class="h-4 w-4" /></router-link>
-            <router-link class="icon-btn" :class="{ 'pointer-events-none opacity-40': !project.managed }" title="AI 诊断" aria-label="AI 诊断" :to="`/agent?projectId=${project.id}&containerId=${container.id}&diagnose=1`"><Bot class="h-4 w-4" /></router-link>
+            <router-link class="icon-btn" title="实时日志" aria-label="实时日志" :to="{ path: '/logs', query: { projectId: project.id, containerId: container.id, from: 'services' } }"><ScrollText class="h-4 w-4" /></router-link>
+            <router-link v-if="dbContainers.length" class="icon-btn" title="聚合日志（所有容器）" aria-label="聚合日志" :to="{ path: '/logs', query: { projectId: project.id, from: 'services' } }"><Layers class="h-4 w-4" /></router-link>
+            <router-link class="icon-btn" title="容器终端" aria-label="容器终端" :to="`/shell?projectId=${project.id}&containerId=${container.id}`"><TerminalSquare class="h-4 w-4" /></router-link>
+            <router-link class="icon-btn" title="AI 诊断" aria-label="AI 诊断" :to="`/agent?projectId=${project.id}&containerId=${container.id}&diagnose=1`"><Bot class="h-4 w-4" /></router-link>
           </div>
         </div>
       </div>
@@ -122,6 +119,8 @@ import SparklineChart from '../common/SparklineChart.vue';
 import { api, streamProjectStats } from '../../api/client.js';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
 
+const noteSaving = ref(false);
+const noteError = ref('');
 const props = defineProps({
   project: { type: Object, required: true },
   expanded: Boolean,
@@ -161,7 +160,6 @@ onBeforeUnmount(() => { webuiRequest++; closeStats(); });
 
 async function checkUpdates() {
   updateInfo.value = null;
-  if (!props.project.managed) return;
   try {
     updateInfo.value = await api.getProjectUpdates(props.project.id);
   } catch {
@@ -173,7 +171,6 @@ let webuiRequest = 0;
 async function loadWebUi() {
   const requestId = ++webuiRequest;
   webuiLinks.value = [];
-  if (!props.project.managed) return;
   try {
     const data = await api.getProjectWebUi(props.project.id);
     if (requestId !== webuiRequest) return;
@@ -182,7 +179,7 @@ async function loadWebUi() {
     if (requestId === webuiRequest) webuiLinks.value = []; // 检测失败静默
   }
 }
-watch(() => JSON.stringify([props.project.id, props.project.managed, props.project.containers.map(({ id, state, ports, hostPorts }) => ({ id, state, ports, hostPorts }))]), loadWebUi, { immediate: true });
+watch(() => JSON.stringify([props.project.id, props.project.containers.map(({ id, state, ports, hostPorts }) => ({ id, state, ports, hostPorts }))]), loadWebUi, { immediate: true });
 
 async function loadEnvPreview() {
   envPreview.value = [];
@@ -222,7 +219,7 @@ async function loadDependencies() {
 
 async function openStats() {
   closeStats();
-  if (!props.project.managed || !props.project.containers.some((c) => c.state === 'running')) return;
+  if (!props.project.containers.some((c) => c.state === 'running')) return;
   statsAbort = new AbortController();
   try {
     await streamProjectStats(props.project.id, (frame) => {
@@ -287,26 +284,35 @@ const imageState = computed(() => {
 });
 
 function trigger(action) {
-  if (!props.project.managed || locked.value) return;
+  if (locked.value) return;
   if (action === 'stop') { stopConfirm.value = true; return; }
   emit('action', action);
 }
 function confirmStop() { stopConfirm.value = false; if (!locked.value) emit('action', 'stop'); }
 function triggerContainer(container, action) {
-  if (!props.project.managed || locked.value) return;
+  if (locked.value) return;
   if (action === 'stop') { stopContainer.value = container; return; }
   emit('container-action', { container, action });
 }
 function confirmContainerStop() {
   const container = stopContainer.value;
   stopContainer.value = null;
-  if (container && props.project.managed && !locked.value) emit('container-action', { container, action: 'stop' });
+  if (container && !locked.value) emit('container-action', { container, action: 'stop' });
 }
 async function toggleFavorite(project) { project.favorite = !project.favorite; await api.saveProjectPreference(project.id, { favorite: project.favorite }); emit('refresh'); }
 async function editNote(project) {
+  if (noteSaving.value) return;
   const note = window.prompt('项目备注（最多 500 字）', project.note || '');
   if (note === null) return;
-  project.note = note.slice(0, 500); await api.saveProjectPreference(project.id, { note: project.note });
+  noteSaving.value = true; noteError.value = '';
+  try {
+    const nextNote = note.slice(0, 500);
+    await api.saveProjectPreference(project.id, { note: nextNote });
+    project.note = nextNote;
+    emit('refresh', true);
+  } catch (error) {
+    noteError.value = error.message || '备注保存失败';
+  } finally { noteSaving.value = false; }
 }
 function healthClass(health) { return health === 'unhealthy' ? 'text-rose-400' : health === 'healthy' ? 'text-emerald-400' : 'text-amber-400'; }
 function timeAgo(ts) {

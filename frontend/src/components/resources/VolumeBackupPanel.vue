@@ -225,7 +225,7 @@ async function doDelete() {
 }
 onMounted(async () => {
   try {
-    projects.value = ((await api.getProjects(true)).projects || []).filter((project) => project.managed);
+    projects.value = ((await api.getProjects(true)).projects || []);
   } catch { projects.value = []; }
   await loadBackups();
 });

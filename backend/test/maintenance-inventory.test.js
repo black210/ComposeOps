@@ -49,11 +49,11 @@ test('单个选择自动覆盖同项目容器、bind、命名及匿名卷', () =
   assert.ok(result.declared.some((s) => s.kind === 'volume' && s.source === 'random-anonymous-volume'));
   assert.equal(result.sources.filter((s) => s.kind !== 'volume').length, 1);
 });
-test('共享写入、未纳管、面板自身和临时辅助容器不能伪装成完整', () => {
+test('共享写入、应用缺失、面板自身和临时辅助容器不能伪装成完整', () => {
   const a = container('web', 'app', [{ Type: 'bind', Source: '/shared', RW: true }]),
     b = container('outside', null, [{ Type: 'bind', Source: '/shared/sub', RW: true }]);
   assert.match(inventoryForBackup([a, b], ['web'], opts).blockers.join(), /应用外容器/);
-  assert.match(inventoryForBackup([a], ['web'], { ...opts, projects: [] }).blockers.join(), /未纳管/);
+  assert.match(inventoryForBackup([a], ['web'], { ...opts, projects: [] }).blockers.join(), /应用或 Compose 目录不可用/);
   assert.match(inventoryForBackup([a], ['web'], { ...opts, selfId: 'web' }).blockers.join(), /面板自身/);
   a.Config.Labels['composeops.helper'] = 'workspace';
   assert.match(inventoryForBackup([a], ['web'], opts).blockers.join(), /辅助容器/);

@@ -7,7 +7,7 @@
     <div class="flex flex-wrap items-end gap-2">
       <label class="form-grid-label"><span>项目</span>
         <select v-model="projectId" class="input w-full sm:w-64" aria-label="选择完整备份预检项目" :disabled="loadingProjects" @change="clearPlan">
-          <option value="">选择已纳管项目</option>
+          <option value="">选择项目</option>
           <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.projectName }}</option>
         </select>
       </label>
@@ -72,7 +72,7 @@ async function loadProjects() {
   try {
     const result = await api.getProjects(true);
     if (request !== projectsRequest) return;
-    projects.value = (result.projects || []).filter(project => project.managed);
+    projects.value = (result.projects || []);
     if (!projects.value.some(project => project.id === projectId.value)) projectId.value = '';
   } catch (failure) {
     if (request === projectsRequest) { projects.value = []; projectId.value = ''; error.value = failure.message || '项目读取失败'; }

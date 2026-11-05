@@ -238,9 +238,9 @@ export async function maintenanceOverview() {
         updateCheckReason: !project
           ? '没有可读取的 Compose 定义'
           : !project.managed
-            ? '请先在设置中纳管此应用'
+            ? '应用不存在或当前不可见'
             : !project.mountEnabled
-              ? '请先在设置中授权 Compose 目录访问'
+              ? '当前节点或项目路径不支持 Compose 目录访问'
               : !project.editable
                 ? '当前节点无法读取 Compose 配置'
                 : '',
@@ -285,7 +285,7 @@ export function inventoryForBackup(
         (p) => p.projectName === labels['com.docker.compose.project'] && p.workingDir === directory,
       );
       if (!project?.managed || !project.mountEnabled)
-        blockers.push(name(c) + ' 所属应用未纳管或未授权目录访问');
+        blockers.push(name(c) + ' 所属应用或 Compose 目录不可用');
       add('project', directory);
     }
     for (const m of c.Mounts || []) {
@@ -891,7 +891,7 @@ async function runPreparedUpdate(task) {
     for (const projectId of task.projectIds) {
       if (getActiveHost().id !== task.hostId) throw fault('节点已切换，停止后续更新');
       const found = projects.find((p) => p.id === projectId);
-      if (!found?.managed || !found.mountEnabled) throw fault('项目授权或目录已变化，未更新');
+      if (!found?.managed || !found.mountEnabled) throw fault('项目归属或目录已变化，未更新');
       const p = {
         ...found,
         environmentFiles: task.modelHashes.find((m) => m.id === projectId)?.environmentFiles || [],

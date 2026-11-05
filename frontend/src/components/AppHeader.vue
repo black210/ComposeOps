@@ -41,7 +41,7 @@
                 <span class="block truncate text-sm font-mono text-surface-200">{{ p.projectName }}</span>
                 <span class="block truncate text-[10px] text-surface-500">{{ p.owner }} · {{ p.containers.length }} 容器</span>
               </span>
-              <span v-if="p.managed" class="count-badge shrink-0 text-[9px] text-emerald-300">纳管</span>
+              <span v-if="p.note?.trim()" class="max-w-32 truncate count-badge text-[9px]" :title="p.note">{{ p.note }}</span>
             </button>
             <p v-if="!quickProjects.length" class="px-2 py-4 text-center text-xs text-surface-600">{{ projectQuery ? '没有匹配的项目' : '暂无项目' }}</p>
           </div>
@@ -178,8 +178,8 @@ const baseCommands = [
   { to: '/marketplace', label: '应用市场', description: '发现、收藏和部署应用模板', icon: Store, category: 'marketplace app store 模板 应用 市场' },
   { to: '/resources', label: '存储清理', description: '管理镜像、卷、网络与数据卷备份', icon: Boxes, category: 'storage volume image network 存储 清理 备份' },
   { to: '/cost', label: '成本分析', description: '分析项目与镜像的资源占用', icon: ChartNoAxesCombined, category: 'cost resource 成本 分析' },
-  { to: '/settings', label: '系统设置', description: '配置通知、更新、AI 与项目纳管', icon: Settings, category: 'notification maintenance mounts 设置' },
-  { to: '/settings?tab=mounts', label: '项目纳管', description: '选择允许控制和编辑 Compose 的项目', icon: Boxes, category: 'permission mount compose 权限 目录' },
+  { to: '/settings', label: '系统设置', description: '配置通知、更新、AI 与项目目录', icon: Settings, category: 'notification maintenance mounts 设置' },
+  { to: '/settings?tab=mounts', label: '项目目录', description: '查看自动发现项目的 Compose 目录状态', icon: Boxes, category: 'permission mount compose 权限 目录' },
   { to: '/settings?tab=notifications', label: '异常通知', description: '设置容器、内存和存储告警渠道', icon: Settings, category: 'alert webhook telegram email 告警' },
   { to: '/settings?tab=maintenance', label: 'Docker 维护', description: '检查镜像更新并清理可回收空间', icon: Settings, category: 'prune image update cleanup 清理 镜像' },
 ];
@@ -215,7 +215,6 @@ const commands = computed(() => {
       category: `app store blueprint deploy marketplace 部署 应用市场 模板市场 ${blueprint.name}`,
     }));
   const actionCommands = asArray(allProjects.value)
-    .filter((project) => project.managed)
     .flatMap((project) => ([
       { id: `run-${project.id}-up`, run: () => void runProjectAction(project, 'up'), label: `启动: ${project.projectName}`, description: '通过 Compose 启动项目', icon: Play, category: `start up 启动 运行 ${project.projectName}` },
       { id: `run-${project.id}-restart`, run: () => void runProjectAction(project, 'restart'), label: `重启: ${project.projectName}`, description: '重启项目所有容器', icon: RotateCw, category: `restart reboot 重启 ${project.projectName}` },

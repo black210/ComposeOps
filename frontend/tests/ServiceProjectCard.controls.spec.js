@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
+import { api } from '../src/api/client.js';
 import ServiceProjectCard from '../src/components/services/ServiceProjectCard.vue';
 
 vi.mock('../src/api/client.js', () => ({
-  api: { getProjectUpdates: vi.fn().mockResolvedValue({}), getProjectWebUi: vi.fn().mockResolvedValue({ links: [] }), getProjectEnv: vi.fn().mockResolvedValue({}), getComposeFile: vi.fn().mockResolvedValue({ content: 'services: {}' }) },
+  api: { saveProjectPreference: vi.fn().mockResolvedValue({}), getProjectUpdates: vi.fn().mockResolvedValue({}), getProjectWebUi: vi.fn().mockResolvedValue({ links: [] }), getProjectEnv: vi.fn().mockResolvedValue({}), getComposeFile: vi.fn().mockResolvedValue({ content: 'services: {}' }) },
   streamProjectStats: vi.fn().mockResolvedValue(),
 }));
 let wrapper;
-afterEach(() => wrapper?.unmount());
+afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); });
 const target = { id: 'target', name: 'tao-sync', state: 'exited', image: 'sync', ports: [] };
 const other = { id: 'other', name: 'openlist', state: 'running', image: 'web', ports: [] };
 const project = { id: 'p', projectName: 'file_transfer', managed: true, editable: true, containers: [target, other] };
@@ -40,11 +41,11 @@ describe('服务页单个容器启停', () => {
     await wrapper.get('[role="dialog"] button').trigger('click');
     expect(wrapper.emitted('container-action')).toEqual([[{ container: other, action: 'stop' }]]);
   });
-  it('未纳管或执行中禁用单容器按钮，状态变化后切换为停止', async () => {
+  it('仅执行中禁用单容器按钮，旧纳管标志不再影响操作', async () => {
     render({ busy: true });
     expect(wrapper.get('[aria-label="启动 tao-sync"]').element.disabled).toBe(true);
     await wrapper.setProps({ busy: false, project: { ...project, managed: false } });
-    expect(wrapper.get('[aria-label="启动 tao-sync"]').element.disabled).toBe(true);
+    expect(wrapper.get('[aria-label="启动 tao-sync"]').element.disabled).toBe(false);
     await wrapper.setProps({ project: { ...project, containers: [{ ...target, state: 'running' }, other] } });
     await flushPromises();
     expect(wrapper.find('[aria-label="启动 tao-sync"]').exists()).toBe(false);
@@ -60,5 +61,30 @@ describe('服务页单个容器启停', () => {
     await wrapper.setProps({ project: { ...project, containers: [{ ...other, created: 1, startedAt: null }] } });
     expect(wrapper.find('.svc-container__uptime').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('天前启动');
+  });
+});
+
+
+describe('项目备注标签', () => {
+  it('有备注时替代旧纳管标签，没有备注时不占位', async () => {
+    render({ project: { ...project, note: '文件同步与存储' } });
+    expect(wrapper.get('.svc-card__remark').text()).toBe('文件同步与存储');
+    expect(wrapper.get('.svc-card__remark').attributes('title')).toBe('文件同步与存储');
+    expect(wrapper.text()).not.toMatch(/已纳管|未纳管/);
+    await wrapper.setProps({ project: { ...project, note: '  ' } });
+    expect(wrapper.find('.svc-card__remark').exists()).toBe(false);
+  });
+  it('保存成功才更新标签，保存失败保留原备注并显示错误', async () => {
+    const data = { ...project, note: '原备注' };
+    render({ project: data });
+    vi.spyOn(window, 'prompt').mockReturnValue('新备注');
+    api.saveProjectPreference.mockResolvedValueOnce({});
+    await wrapper.get('[aria-label="编辑备注"]').trigger('click'); await flushPromises();
+    expect(wrapper.get('.svc-card__remark').text()).toBe('新备注');
+    expect(wrapper.emitted('refresh')).toEqual([[true]]);
+    api.saveProjectPreference.mockRejectedValueOnce(new Error('保存失败，请重试'));
+    await wrapper.get('[aria-label="编辑备注"]').trigger('click'); await flushPromises();
+    expect(data.note).toBe('新备注');
+    expect(wrapper.get('[role="alert"]').text()).toContain('保存失败');
   });
 });

@@ -1332,6 +1332,7 @@ export function setProjectPreference(projectId, { managed, mountEnabled, favorit
   return { managed: !!nextManaged, favorite: !!nextFavorite, note: nextNote };
 }
 
+// 历史配置导入/兼容数据保留；运行时不再读取这些白名单标志来授权项目。
 export function setProjectManagement(discoveredProjectIds, managedProjectIds, mountProjectIds = null) {
   const managedSet = new Set(managedProjectIds);
   const mountSet = new Set(mountProjectIds || []);

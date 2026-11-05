@@ -38,7 +38,7 @@ import { harvestSecretValues, redactSecrets, redactSecretValue } from '../../lib
  * 不引入 LangChain/n8n,直接复用现有 Docker/Compose/DB/权限服务。
  */
 
-const LOOP_SYSTEM_PROMPT = `你是 ComposeOps 的聊天式运维 Agent。你通过工具帮助用户查看和操作已经明确纳管的 Docker Compose 项目。
+const LOOP_SYSTEM_PROMPT = `你是 ComposeOps 的聊天式运维 Agent。你通过工具帮助用户查看和操作当前节点自动发现的 Docker Compose 项目。
 
 安全规则:
 1. 只能操作 project.list_managed 返回的项目,绝不猜测或伪造项目 ID。

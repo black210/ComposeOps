@@ -136,8 +136,6 @@ export const api = {
   changePassword: (payload) => request('/auth/password', { method: 'POST', body: JSON.stringify(payload) }),
   getProjects: (force = false) => request('/projects', { force }),
   getMountPlan: async () => normalizeMountPlan(await request('/projects/mount-plan')),
-  saveProjectManagement: (projectIds, mountProjectIds = []) => request('/projects/management', { method: 'PUT', body: JSON.stringify({ projectIds, mountProjectIds }) }),
-  saveProjectMounts: (projectIds) => request('/projects/mounts', { method: 'PUT', body: JSON.stringify({ projectIds }) }),
   getProject: (id) => request(`/projects/${id}`),
   getProjectActivity: (id) => request(`/projects/${id}/activity`),
   listJobs: async (limit = 20) => normalizeJobsResponse(await request(`/jobs?limit=${limit}`, { cacheable: true })),

@@ -348,6 +348,22 @@ export function inventoryForBackup(
     runtimeDependencies,
   };
 }
+export async function inspectBackupInventory(docker, rows) {
+  const inspected = [];
+  for (const row of rows) {
+    try {
+      inspected.push(await docker.getContainer(row.Id).inspect());
+    } catch (error) {
+      // 空闲辅助容器可在 Docker 列表与 inspect 之间被自动回收。
+      // 业务容器消失仍要求重新预检，不能缩减用户选择的备份范围。
+      if (error.statusCode === 404 && row.Labels?.['composeops.helper']) continue;
+      if (error.statusCode === 404) throw fault('容器清单正在变化，请刷新后重新预检');
+      throw error;
+    }
+  }
+  return inspected;
+}
+
 export async function prepareMaintenance(input) {
   const r = await localRuntime();
   const { host, docker, self } = r;
@@ -364,8 +380,7 @@ export async function prepareMaintenance(input) {
   ));
   await closeIdleProjectRunners(selectedProjects.map((p) => p.id), { waitMs: 35_000 });
   const raw = await docker.listContainers({ all: true, size: true });
-  const all = [];
-  for (const c of raw) all.push(await docker.getContainer(c.Id).inspect());
+  const all = await inspectBackupInventory(docker, raw);
   const plan = inventoryForBackup(all, input.containerIds, {
     selfId: self?.Id,
     backupPath,

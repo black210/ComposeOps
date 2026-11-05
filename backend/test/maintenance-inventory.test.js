@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 const temp = await mkdtemp(path.join(os.tmpdir(), 'maintenance-scope-'));
 process.env.DB_PATH = path.join(temp, 'test.db');
 process.env.MAINTENANCE_DATA_DIR = path.join(temp, 'maintenance');
-const { inventoryForBackup, recreateComposeServices, saveSyncTarget, publicTargets } = await import(
+const { inventoryForBackup, inspectBackupInventory, recreateComposeServices, saveSyncTarget, publicTargets } = await import(
   '../src/services/container-maintenance.js'
 );
 const container = (id, app, mounts = []) => ({
@@ -26,6 +26,18 @@ const opts = {
   backupPath: '/backups/apps',
   projects: [{ projectName: 'app', workingDir: '/apps/app', managed: true, mountEnabled: true }],
 };
+test('预检跳过已自动回收的辅助容器，业务容器消失及 Docker 错误仍拒绝', async () => {
+  const rows = [{ Id: 'helper', Labels: { 'composeops.helper': 'compose-workspace' } }, { Id: 'web' }];
+  const web = container('web', 'app');
+  const docker = { getContainer: (id) => ({ inspect: async () => {
+    if (id === 'helper') throw Object.assign(new Error('Not found'), { statusCode: 404 });
+    return web;
+  } }) };
+  assert.deepEqual(await inspectBackupInventory(docker, rows), [web]);
+  await assert.rejects(inspectBackupInventory(docker, [{ Id: 'helper' }]), { statusCode: 409, message: '容器清单正在变化，请刷新后重新预检' });
+  const failed = { getContainer: () => ({ inspect: async () => { throw Object.assign(new Error('Docker failed'), { statusCode: 500 }); } }) };
+  await assert.rejects(inspectBackupInventory(failed, rows), { statusCode: 500 });
+});
 test('单个选择自动覆盖同项目容器、bind、命名及匿名卷', () => {
   const all = [
     container('web', 'app', [{ Type: 'bind', Source: '/apps/app/data', RW: true }]),

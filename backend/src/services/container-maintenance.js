@@ -3,7 +3,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync } from 'node:fs';
 import { getActiveHost, getDockerForHost } from './docker-hosts.js';
-import { scanProjects } from './scanner.js';
+import { scanProjects, invalidateScanCache } from './scanner.js';
 import {
   runWorkspaceComposeArgs,
   withRunner,
@@ -963,6 +963,8 @@ async function runPreparedUpdate(task) {
         { status: 'failed', stage: error.message, message: error.message },
       );
     });
+  } finally {
+    invalidateScanCache();
   }
 }
 

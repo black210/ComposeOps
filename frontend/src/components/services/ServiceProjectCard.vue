@@ -41,12 +41,12 @@
           <button class="btn-primary" :disabled="!project.managed || locked" :title="project.editable ? '通过 Docker Compose 启动' : '启动项目中已有的容器'" @click="trigger('up')"><Play class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'up' }" />启动</button>
           <button class="btn-secondary" :disabled="!project.managed || locked" title="重启现有容器，沿用当前镜像；应用新镜像请到运维页更新" @click="trigger('restart')"><RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'restart' }" />重启</button>
           <button class="btn-secondary svc-card__stop" :disabled="!project.managed || locked" @click="trigger('stop')"><Square class="h-3.5 w-3.5" :class="{ 'animate-spin': !actionContainerId && actionRunning === 'stop' }" />停止</button>
-          <button class="btn-secondary" :disabled="!project.editable || locked" title="完整备份后拉取镜像并重建当前 Compose 应用，应用最新配置" @click="$emit('rebuild')"><RefreshCw class="h-3.5 w-3.5" />重建</button>
+          <button class="btn-secondary" :disabled="!project.editable || locked" title="按当前 Compose 配置重建应用，使用本地镜像，不备份、不拉取镜像" @click="$emit('rebuild')"><RefreshCw class="h-3.5 w-3.5" />重建</button>
         </div>
         <div class="svc-card__tools">
           <button class="btn-ghost" :disabled="!project.managed || locked" @click="trigger('ps')"><ListTree class="h-3.5 w-3.5" />状态</button>
           <button class="btn-ghost" :disabled="!project.editable || locked" title="需在项目纳管中勾选 Compose" @click="trigger('pull')"><Download class="h-3.5 w-3.5" :class="{ 'animate-spin': actionRunning === 'pull' }" />拉取</button>
-          <button v-if="updateInfo?.hasUpdate" class="btn-ghost" :disabled="!project.editable || locked" title="平滑升级到最新镜像" @click="$emit('upgrade')"><Sparkles class="h-3.5 w-3.5" />平滑升级</button>
+          <button v-if="updateInfo?.hasUpdate" class="btn-ghost" :disabled="!project.editable || locked" title="自动完整备份成功后更新镜像" @click="$emit('upgrade')"><Sparkles class="h-3.5 w-3.5" />更新</button>
           <router-link class="btn-ghost" :class="{ 'pointer-events-none opacity-40': !project.editable }" :to="`/compose?projectId=${project.id}`"><FileCode2 class="h-3.5 w-3.5" />配置</router-link>
           <button class="btn-ghost" :disabled="busy" title="维护环境变量和账号密码" @click="$emit('env')"><KeyRound class="h-3.5 w-3.5" />环境与密钥</button>
           <button class="btn-ghost" :disabled="!project.managed || busy" @click="$emit('activity')"><History class="h-3.5 w-3.5" />活动</button>

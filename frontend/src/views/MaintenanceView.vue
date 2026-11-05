@@ -39,7 +39,7 @@
     <template v-if="plan">
       <div class="flex items-center justify-between gap-3">
         <h2 class="section-title">
-          {{ plan.action === 'update' ? '整个 Compose 更新前确认' : '完整备份确认' }}
+          {{ plan.action === 'update' ? '更新预检结果' : '完整备份确认' }}
         </h2>
         <button class="btn-ghost" :disabled="busy" @click="plan = null">返回列表</button>
       </div>
@@ -49,6 +49,7 @@
           <label class="mt-3 block text-sm"
             >当前节点的宿主机目录<input
               v-model="backupPath"
+              :readonly="plan.action === 'update'"
               class="input mt-2 w-full"
               aria-label="本次备份保存路径"
               @input="invalidatePlan"
@@ -67,7 +68,7 @@
             重新预检路径及范围
           </button>
         </div>
-        <label class="flex items-center gap-2 text-sm"
+        <label v-if="plan.action === 'backup'" class="flex items-center gap-2 text-sm"
           ><input v-model="makeDefault" type="checkbox" />同时设为默认保存路径</label
         >
       </section>
@@ -118,7 +119,7 @@
           <li v-for="blocker in plan.blockers" :key="blocker">{{ blocker }}</li>
         </ul>
       </section>
-      <section class="section-panel space-y-4">
+      <section v-if="plan.action === 'backup'" class="section-panel space-y-4">
         <a
           class="btn-secondary inline-flex"
           href="/api/v1/maintenance/recovery-key"
@@ -311,7 +312,7 @@
             <p v-if="!maintenanceGroups.length && !loading" class="p-6 text-center text-sm text-muted">没有匹配应用或容器</p>
           </div>
           <p class="text-xs text-muted">
-            更新和完整备份均覆盖整个 Compose 应用；更新后保留原启停状态并检查健康。面板自身、临时辅助容器或无法完整保存的数据会在预检中明确阻止；独立容器需先有 Compose 定义才能更新。
+            更新自动使用默认路径完整备份，成功后拉取并重建整个 Compose 应用；备份失败不更新，完成后保留原启停状态并检查健康。面板自身、临时辅助容器或无法完整保存的数据会在预检中明确阻止；独立容器需先有 Compose 定义才能更新。
           </p>
         </template>
 
@@ -331,6 +332,11 @@
             <button class="btn-secondary" :disabled="busy || !backupPath" @click="savePath">
               检查并保存
             </button>
+          </section>
+          <section class="section-panel space-y-3">
+            <h2 class="section-title">备份加密与恢复密钥</h2>
+            <p class="text-sm text-muted">恢复密钥由面板自动生成并持久保存，用于解密完整备份。建议另外下载保存一份；更新时无需重复下载或确认。</p>
+            <a class="btn-secondary inline-flex" href="/api/v1/maintenance/recovery-key" download="composeops-recovery.key"><Download class="h-4 w-4" />下载恢复密钥</a>
           </section>
           <section v-for="backup in data.backups" :key="backup.id" class="section-panel space-y-3">
             <div class="flex flex-wrap items-center justify-between gap-3">
@@ -905,6 +911,13 @@ function updateIds(ids) {
 }
 function prepare(action, ids) {
   if (busy.value) return;
+  const automaticUpdate = action === 'update';
+  const defaultPath = data.value.settings.backupPath;
+  if (automaticUpdate && !defaultPath) {
+    error.value = '请先配置当前节点的默认备份保存路径，保存后再点击更新。';
+    setTab('backups');
+    return;
+  }
   stopUpdateChecks();
   return perform(async (valid) => {
     preparing.value = true;
@@ -912,9 +925,19 @@ function prepare(action, ids) {
       const result = await api.prepareMaintenance({
         action,
         containerIds: [...ids],
-        backupPath: backupPath.value,
+        backupPath: automaticUpdate ? defaultPath : backupPath.value,
       });
       if (!valid()) return;
+      if (automaticUpdate && result.coverageVerified && !result.blockers.length) {
+        await api.executeMaintenance({ token: result.token });
+        if (!valid()) return;
+        plan.value = null;
+        selected.value = [];
+        notice.value = '更新任务已提交：先自动完整备份，备份成功后拉取并重建；备份失败不会更新。';
+        setTab('tasks');
+        await load(true);
+        return;
+      }
       plan.value = result;
       planStale.value = false;
       confirmed.value = false;
@@ -925,7 +948,7 @@ function prepare(action, ids) {
   });
 }
 function execute() {
-  if (!canExecute.value) return;
+  if (plan.value?.action !== 'backup' || !canExecute.value) return;
   return perform(async (valid) => {
     await api.executeMaintenance({
       token: plan.value.token,
@@ -1300,20 +1323,20 @@ function actionLabel(action) {
     ] || action
   );
 }
-async function openRequestedRebuild() {
-  if (route.query.action !== 'rebuild') return false;
+async function openRequestedUpdate() {
+  if (route.query.action !== 'update') return false;
   const { projectId, hostId } = route.query;
   const requestEpoch = epoch;
   // 只接受页面加载时的当前节点，切节点后不能重放旧项目请求。
   await router.replace({ query: { tab: 'containers' } });
   tab.value = 'containers';
   if (requestEpoch !== epoch || loading.value || disposed || !data.value.hostId || data.value.hostId !== hostId) {
-    error.value = '节点已变化或列表未加载成功，请返回服务页重新选择重建。';
+    error.value = '节点已变化或列表未加载成功，请返回服务页重新选择更新。';
     return true;
   }
   const members = data.value.containers.filter(c => !c.helper && c.projectId === projectId);
   if (!members.length || members.some(c => operationReason(c))) {
-    error.value = '应用已变化或不允许重建，请刷新后重新选择。';
+    error.value = '应用已变化或不允许更新，请刷新后重新选择。';
     return true;
   }
   await prepare('update', members.map(c => c.id));
@@ -1321,7 +1344,7 @@ async function openRequestedRebuild() {
 }
 onMounted(() => {
   void load().then(async () => {
-    if (await openRequestedRebuild()) return;
+    if (await openRequestedUpdate()) return;
     if (tab.value === 'containers') void checkUpdates(false);
   });
   window.addEventListener('composeops:host-changed', hostChanged);

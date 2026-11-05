@@ -5,7 +5,8 @@ import { pruneWorkspaceRunners, readWorkspaceCompose, saveWorkspaceCompose } fro
 import { prepareProjectAction } from '../services/project-action-runner.js';
 import { readProjectEnv, saveProjectEnv, applyProjectEnv, assertEnvAccess, listProjectEnvFiles, normalizeEnvFileName } from '../services/project-env.js';
 import { listProjectEnvBackups, restoreProjectEnvBackup } from '../services/project-env-backups.js';
-import { getProjectUpdates, upgradeProject, rollbackProject } from '../services/image-updater.js';
+import { getProjectUpdates, rollbackProject } from '../services/image-updater.js';
+import { startProjectUpdate } from '../services/container-maintenance.js';
 import { readContainerStat } from '../services/stats.js';
 import { validateComposeSemantics, previewComposeChange } from '../services/compose-validator.js';
 import { listProjectDbContainers, runDbDump } from '../services/db-dumper.js';
@@ -569,7 +570,8 @@ export default async function projectRoutes(fastify) {
       reply.raw.write(`data: ${JSON.stringify({ type, data })}\n\n`);
     };
     let output = prepared.container ? `仅操作容器 ${prepared.container.name}\n` : `操作 Compose 项目 ${project.projectName}\n`;
-    if (action === 'restart') output += '重启沿用当前镜像，不应用 Compose 配置变更；应用新镜像请到运维页执行完整备份后更新。\n';
+    if (action === 'restart') output += '重启沿用当前镜像；应用当前配置可重建，拉取新镜像请使用更新。\n';
+    if (action === 'rebuild') output += '按当前 Compose 配置重建应用，不执行备份，不拉取或构建镜像；本地镜像缺失时将报错。\n';
     send('stdout', output);
     let finished = false;
     const finish = (code) => {
@@ -646,7 +648,6 @@ export default async function projectRoutes(fastify) {
       if (reply.raw.destroyed || reply.raw.writableEnded) return;
       reply.raw.write(`data: ${JSON.stringify({ type, data })}\n\n`);
     };
-    let output = '';
     let finished = false;
     const finish = (payload) => {
       if (finished) return;
@@ -654,22 +655,17 @@ export default async function projectRoutes(fastify) {
       send('result', payload);
       reply.raw.end();
     };
-    let child;
-    upgradeProject(project, {
-      services: request.body.services,
-      onOutput: (type, text) => { output += text; send(type, text); },
-      onChild: (process) => { child = process; },
-    }).then((result) => {
-      send('exit', { code: result.code });
-      finish({ ok: true, ...result, output });
+    reply.hijack();
+    await startProjectUpdate(project).then((task) => {
+      const text = '已提交完整备份后更新任务 ' + task.id + '，进度请查看运维任务记录。\n';
+      send('stdout', text);
+      send('exit', { code: 0 });
+      finish({ ok: true, taskId: task.id, status: task.status });
     }).catch((error) => {
-      const text = `${error.message}\n`;
-      output += text;
+      const text = error.message + '\n';
       send('stderr', text);
-      finish({ ok: false, message: error.message, output });
-    });
-    reply.raw.on('close', () => {
-      if (!finished && child && child.exitCode === null && !child.killed) child.kill('SIGTERM');
+      send('exit', { code: 1 });
+      finish({ ok: false, message: error.message });
     });
   });
 

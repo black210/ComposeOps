@@ -72,6 +72,7 @@ const ACTIONS = {
   up: ['up', '-d'],
   stop: ['stop'],
   restart: ['restart'],
+  rebuild: ['up', '-d', '--force-recreate', '--pull', 'never', '--no-build', '--wait', '--wait-timeout', '120'],
   pull: ['pull'],
   ps: ['ps'],
 };

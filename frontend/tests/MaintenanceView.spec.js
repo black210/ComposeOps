@@ -80,8 +80,8 @@ async function show() {
 }
 const button = (text) => wrapper.findAll('button').find((b) => b.text() === text);
 describe('完整备份界面的真实确认条件', () => {
-  it('服务页重建入口仅预检指定节点完整应用，保留显式执行确认', async () => {
-    route.current.query = { action: 'rebuild', projectId: 'app', hostId: 'local' };
+  it('服务页更新入口自动完整备份指定节点的完整应用，无需逐次确认', async () => {
+    route.current.query = { action: 'update', projectId: 'app', hostId: 'local' };
     client.getMaintenance.mockResolvedValue({ ...overview(), containers: [
       { ...overview().containers[0], projectId: 'app' },
       { id: 'db', name: 'app-db', projectId: 'app', state: 'exited' },
@@ -91,23 +91,51 @@ describe('完整备份界面的真实确认条件', () => {
     client.prepareMaintenance.mockResolvedValue({ ...backupPlan(), action: 'update' });
     await show();
     expect(client.prepareMaintenance).toHaveBeenCalledExactlyOnceWith({ action: 'update', containerIds: [id, 'db'], backupPath: '/backups/apps' });
-    expect(wrapper.text()).toContain('整个 Compose 更新前确认');
-    expect(client.executeMaintenance).not.toHaveBeenCalled();
-    expect(button('完整备份后更新整个 Compose').element.disabled).toBe(true);
+    expect(client.executeMaintenance).toHaveBeenCalledExactlyOnceWith({ token: 'token' });
+    expect(wrapper.text()).toContain('先自动完整备份');
+    expect(button('完整备份后更新整个 Compose')).toBeUndefined();
     expect(client.getProjectUpdates).not.toHaveBeenCalled();
     expect(router.replace).toHaveBeenCalledWith({ query: { tab: 'containers' } });
   });
-  it('重建来源节点不匹配或项目消失时拒绝预检，不串入其他应用', async () => {
-    route.current.query = { action: 'rebuild', projectId: 'app', hostId: 'old-host' };
+  it('更新来源节点不匹配或项目消失时拒绝预检，不串入其他应用', async () => {
+    route.current.query = { action: 'update', projectId: 'app', hostId: 'old-host' };
     await show();
     expect(wrapper.text()).toContain('节点已变化');
     expect(client.prepareMaintenance).not.toHaveBeenCalled();
     wrapper.unmount();
-    route.current.query = { action: 'rebuild', projectId: 'gone', hostId: 'local' };
+    route.current.query = { action: 'update', projectId: 'gone', hostId: 'local' };
     await show();
     expect(wrapper.text()).toContain('应用已变化');
     expect(client.prepareMaintenance).not.toHaveBeenCalled();
     expect(client.executeMaintenance).not.toHaveBeenCalled();
+  });
+  it('没有默认路径时先配置路径，不预检或执行；更新阻断项不能绕过', async () => {
+    client.getMaintenance.mockResolvedValue({ ...overview(), settings: {} });
+    await show();
+    await button('更新').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('请先配置当前节点的默认备份保存路径');
+    expect(client.prepareMaintenance).not.toHaveBeenCalled();
+    expect(client.executeMaintenance).not.toHaveBeenCalled();
+    wrapper.unmount();
+    client.getMaintenance.mockResolvedValue(overview());
+    client.prepareMaintenance.mockResolvedValue({ ...backupPlan(), action: 'update', blockers: ['磁盘空间不足'], coverageVerified: false });
+    await show();
+    await button('更新').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('磁盘空间不足');
+    expect(client.executeMaintenance).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('恢复密钥已单独保存');
+  });
+  it('默认路径更新不伪造密钥已下载声明，接口失败保持失败且不显示已提交', async () => {
+    client.prepareMaintenance.mockResolvedValue({ ...backupPlan(), action: 'update' });
+    client.executeMaintenance.mockRejectedValue(new Error('默认路径已变化'));
+    await show();
+    await button('更新').trigger('click');
+    await flushPromises();
+    expect(client.executeMaintenance).toHaveBeenCalledWith({ token: 'token' });
+    expect(wrapper.text()).toContain('默认路径已变化');
+    expect(wrapper.text()).not.toContain('更新任务已提交');
   });
   it('默认按 Compose 收起，搜索保留整组及操作范围，刷新保留展开、切节点重置', async () => {
     const dbId = 'b'.repeat(64);
@@ -183,7 +211,7 @@ describe('完整备份界面的真实确认条件', () => {
     expect(wrapper.text()).not.toContain('正在预检完整范围');
     expect(button('开始完整备份')).toBeDefined();
   });
-  it('应用组的更新与备份均提交完整范围并明确确认', async () => {
+  it('应用组更新自动提交完整范围，手动备份仍保留范围确认', async () => {
     const dbId = 'b'.repeat(64);
     client.getMaintenance.mockResolvedValue({
       ...overview(),
@@ -204,11 +232,11 @@ describe('完整备份界面的真实确认条件', () => {
     expect(client.prepareMaintenance).toHaveBeenLastCalledWith({
       action: 'update', containerIds: [id, dbId], backupPath: '/backups/apps',
     });
-    expect(wrapper.text()).toContain('整个 Compose 更新前确认');
-    expect(wrapper.text()).toContain('统一执行完整备份、拉取与重建');
-    expect(button('完整备份后更新整个 Compose').element.disabled).toBe(true);
+    expect(client.executeMaintenance).toHaveBeenCalledWith({ token: 'token' });
+    expect(wrapper.text()).toContain('先自动完整备份');
+    await wrapper.findAll('button').find(b => b.text() === '容器运维').trigger('click');
+    await flushPromises();
     expect(wrapper.text()).not.toContain('只重建所选服务');
-    await button('返回列表').trigger('click');
     await button('备份').trigger('click');
     await flushPromises();
     expect(client.prepareMaintenance).toHaveBeenLastCalledWith({

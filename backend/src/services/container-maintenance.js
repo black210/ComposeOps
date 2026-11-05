@@ -626,12 +626,31 @@ export async function prepareMaintenance(input) {
   return publicPlan;
 }
 
+export function maintenanceExecutionMode(prepared, { confirmed, keySaved }, defaultPath) {
+  if (prepared.publicPlan.blockers.length || !prepared.publicPlan.coverageVerified)
+    throw fault('完整备份预检未通过，不能更新或备份');
+  if (prepared.action === 'update') {
+    if (!defaultPath || defaultPath !== prepared.config.backupPath)
+      throw fault('请先配置本节点默认备份保存路径；默认路径发生变化后需要重新预检');
+    return 'automatic-default';
+  }
+  if (confirmed !== true || keySaved !== true)
+    throw fault('尚未确认停机影响及恢复密钥已单独保存');
+  return 'manual';
+}
+
+export async function startProjectUpdate(project) {
+  const { backupPath } = backupSettings();
+  if (!backupPath) throw fault('请先在运维的备份记录页配置默认备份保存路径');
+  const plan = await prepareMaintenance({ action: 'update', containerIds: project.containers.map(c => c.id), backupPath });
+  return executeMaintenance({ token: plan.token });
+}
+
 export async function executeMaintenance({ token, confirmed, keySaved, makeDefault = false }) {
   const prepared = plans.get(token);
   if (!prepared || prepared.expiresAt < Date.now()) throw fault('确认清单已过期，请重新预检');
-  if (confirmed !== true || keySaved !== true || prepared.publicPlan.blockers.length)
-    throw fault('预检未通过，或尚未确认停机影响及恢复密钥已单独保存');
   if (getActiveHost().id !== prepared.r.host.id) throw fault('节点已切换，请重新预检');
+  const confirmationMode = maintenanceExecutionMode(prepared, { confirmed, keySaved }, backupSettings().backupPath);
   const hostId = prepared.r.host.id;
   if (active.has(hostId) || catalog().tasks.some((t) => t.hostId === hostId && t.status === 'running'))
     throw fault('当前节点已有运维任务，请等待完成或处理异常任务');
@@ -651,6 +670,7 @@ export async function executeMaintenance({ token, confirmed, keySaved, makeDefau
       workerId: null,
       status: 'running',
       action: prepared.action,
+      confirmationMode,
       updateScope: prepared.publicPlan.updateScope,
       stage: '准备完整备份',
       createdAt: new Date().toISOString(),

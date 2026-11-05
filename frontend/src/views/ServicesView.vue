@@ -77,15 +77,14 @@
         :busy="busy" :last-results="updateSettings.lastResults" :action-running="project.id === runningAction.id ? runningAction.action : ''"
         :action-container-id="project.id === runningAction.id ? runningAction.containerId || '' : ''"
         @container-action="({ container, action }) => run(project, action, container)"
-        @rebuild="openRebuild(project)"
-        @toggle-expand="toggleExpanded(project.id)" @toggle-select="toggleSelection(project.id)" @refresh="refresh" @activity="activityProject = project" @env="openAccess(project)" @credentials="openAccess(project, 'credentials')" @upgrade="upgradeProject = project" @db-dump="dbDumpProject = project" @action="(action) => run(project, action)"
+        @rebuild="run(project, 'rebuild')"
+        @toggle-expand="toggleExpanded(project.id)" @toggle-select="toggleSelection(project.id)" @refresh="refresh" @activity="activityProject = project" @env="openAccess(project)" @credentials="openAccess(project, 'credentials')" @upgrade="openProjectUpdate(project)" @db-dump="dbDumpProject = project" @action="(action) => run(project, action)"
       />
     </div>
     <OperationOutputDrawer v-if="output.open" :label="actionLabel(output.action)" :name="output.name" :text="output.text" :project-id="output.projectId" :exit-code="output.exitCode" :running="output.running" :batch-tasks="batchTasks" :batch-progress="batchProgress" :completed-count="completedBatchTasks" @close="output.open = false" @diagnose="openDiagnosisForOutput" @inspect="inspectOutputProject" />
     <ProjectAccessModal v-if="envProject" :key="envProject.id" :project="envProject" :initial-tab="accessInitialTab" @close="closeEnv" @refresh="refresh" @apply="handleEnvApply" />
     <AIDiagnosisModal v-if="diagnosis" :open="!!diagnosis" :project-id="diagnosis.projectId" :project-name="diagnosis.projectName" :container-id="diagnosis.containerId" :raw-logs="diagnosis.rawLogs" :env-keys="diagnosis.envKeys" :failed-command="diagnosis.failedCommand" :exit-code="diagnosis.exitCode" :env-editable="diagnosis.envEditable" @close="diagnosis = null" />
     <ProjectActivityDrawer v-if="activityProject" :project="activityProject" @close="activityProject = null" @restored="handleRestored" />
-    <ProjectUpgradeModal v-if="upgradeProject" :project="upgradeProject" :open="!!upgradeProject" @close="upgradeProject = null" @upgrade="handleUpgrade" />
     <DbDumpModal v-if="dbDumpProject" :project="dbDumpProject" @close="dbDumpProject = null" />
   </div>
 </template>
@@ -106,7 +105,6 @@ import ProjectActivityDrawer from '../components/ProjectActivityDrawer.vue';
 import ProjectAccessModal from '../components/services/ProjectAccessModal.vue';
 import ServiceProjectCard from '../components/services/ServiceProjectCard.vue';
 import AIDiagnosisModal from '../components/services/AIDiagnosisModal.vue';
-import ProjectUpgradeModal from '../components/services/ProjectUpgradeModal.vue';
 import DbDumpModal from '../components/services/DbDumpModal.vue';
 import BatchOperationsBar from '../components/services/BatchOperationsBar.vue';
 import OperationOutputDrawer from '../components/services/OperationOutputDrawer.vue';
@@ -123,7 +121,7 @@ const searchQuery = ref(''); const filter = ref('managed'); const sort = ref('pr
 const selectedIds = ref([]); const updateSettings = ref({ lastResults: [] }); const focusedProject = ref('');
 const accessInitialTab = ref('env');
 const inspection = ref(null); const inspectionLoading = ref(false);
-const batchTasks = ref([]); const activityProject = ref(null); const envProject = ref(null); const diagnosis = ref(null); const upgradeProject = ref(null); const dbDumpProject = ref(null); const runningAction = ref({ id: '', action: '' }); const kbFocusId = ref(''); const restartTarget = ref(null);
+const batchTasks = ref([]); const activityProject = ref(null); const envProject = ref(null); const diagnosis = ref(null); const dbDumpProject = ref(null); const runningAction = ref({ id: '', action: '' }); const kbFocusId = ref(''); const restartTarget = ref(null);
 const GP = { healthy: 90, attention: 75, degraded: 55, critical: 0 };
 const GRADE_LABELS = { healthy: '健康', attention: '需关注', degraded: '需处理', critical: '严重' };
 const inspectionGradeLabel = computed(() => GRADE_LABELS[inspection.value?.latest?.grade] || '健康');
@@ -235,11 +233,11 @@ function resetFilters() { searchQuery.value = ''; filter.value = 'managed'; sort
 function toggleSelection(projectId) { selectedIds.value = selectedIds.value.includes(projectId) ? selectedIds.value.filter((id) => id !== projectId) : [...selectedIds.value, projectId]; }
 function toggleAllVisible() { const visibleIds = visibleManagedProjects.value.map((project) => project.id); selectedIds.value = allVisibleSelected.value ? selectedIds.value.filter((id) => !visibleIds.includes(id)) : [...new Set([...selectedIds.value, ...visibleIds])]; }
 function toggleExpanded(projectId) { const next = new Set(expandedIds.value); if (next.has(projectId)) next.delete(projectId); else next.add(projectId); expandedIds.value = next; }
-function openRebuild(project) {
+function openProjectUpdate(project) {
   if (busy.value || !project.editable) return;
-  router.push({ path: '/maintenance', query: { action: 'rebuild', projectId: project.id, hostId: useHostsStore().activeHostId } });
+  router.push({ path: '/maintenance', query: { action: 'update', projectId: project.id, hostId: useHostsStore().activeHostId } });
 }
-function actionLabel(action) { return ({ up: '启动', restart: '重启', stop: '停止', pull: '拉取', ps: '状态', 'env.apply': '应用环境变量', 'env.save': '保存环境变量' })[action] || action; }
+function actionLabel(action) { return ({ up: '启动', restart: '重启', rebuild: '重建', stop: '停止', pull: '拉取', ps: '状态', 'env.apply': '应用环境变量', 'env.save': '保存环境变量' })[action] || action; }
 async function run(project, action, container = null) {
   if (busy.value) return;
   clearTimeout(jobPollTimer);
@@ -276,28 +274,6 @@ async function handleEnvApply({ project }) {
     }, `/projects/${project.id}/env/apply`, { restart: true }, controlController.signal);
     useToastStore().success('环境变量已应用,容器平滑重建完成');
     await refresh();
-  } catch (error) {
-    if (error.name !== 'AbortError') { output.text += `\n[请求失败] ${error.message}`; output.exitCode = 1; }
-  } finally { controlController = null; busy.value = false; output.running = false; }
-}
-async function handleUpgrade({ project, services }) {
-  if (busy.value) return;
-  upgradeProject.value = null;
-  output.open = true; output.text = ''; output.action = 'images.upgrade'; output.name = project.projectName; output.projectId = project.id; output.exitCode = null; output.running = true;
-  busy.value = true;
-  controlController?.abort();
-  controlController = new AbortController();
-  try {
-    await api.streamUpgrade(project.id, services, (frame) => {
-      if (frame.type === 'stdout' || frame.type === 'stderr') output.text += frame.data;
-      else if (frame.type === 'error') output.text += `\n[错误] ${frame.data}`;
-      else if (frame.type === 'exit') { output.exitCode = frame.data.code; output.text += `\n[退出码 ${frame.data.code}]`; }
-      else if (frame.type === 'result') {
-        if (frame.data?.degraded) output.text += `\n[升级后容器未通过健康检查,可在活动/备份中回滚]`;
-      }
-    }, controlController.signal);
-    useToastStore().success('镜像升级完成');
-    store.refresh();
   } catch (error) {
     if (error.name !== 'AbortError') { output.text += `\n[请求失败] ${error.message}`; output.exitCode = 1; }
   } finally { controlController = null; busy.value = false; output.running = false; }
@@ -457,7 +433,7 @@ watch(kbFocusId, (id) => {
   nextTick(() => { document.getElementById(`project-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
 });
 useKeyboardNavigation({
-  enabled: computed(() => route.name === 'services' && !envProject.value && !dbDumpProject.value && !upgradeProject.value && !activityProject.value && !diagnosis.value),
+  enabled: computed(() => route.name === 'services' && !envProject.value && !dbDumpProject.value && !activityProject.value && !diagnosis.value),
   onCheatSheet: () => { window.dispatchEvent(new CustomEvent('composeops:open-cheatsheet')); },
   getProjectIds: () => visibleProjects.value.map((project) => project.id),
   onMove: (id) => { kbFocusId.value = id; },

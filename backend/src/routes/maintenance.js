@@ -100,7 +100,7 @@ export default async function maintenanceRoutes(app) {
             keySaved: { type: 'boolean' },
             makeDefault: { type: 'boolean' },
           }),
-          required: ['token', 'confirmed', 'keySaved'],
+          required: ['token'],
         },
       },
     },

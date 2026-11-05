@@ -25,6 +25,12 @@ test('Compose 名称始终使用容器标签，不按混合大小写目录推断
   for (const action of ['up', 'restart', 'stop', 'pull', 'ps']) {
     assert.deepEqual(composeArgs(project, action).slice(0, 3), ['compose', '--project-name', 'file_transfer']);
   }
+  assert.deepEqual(composeArgs(project, 'rebuild').slice(5), ['up', '-d', '--force-recreate', '--pull', 'never', '--no-build', '--wait', '--wait-timeout', '120']);
+});
+
+test('重建必须有 Compose 权限，不允许单容器或无配置模式冒充重建', async () => {
+  await assert.rejects(prepareProjectAction({ ...project, mountEnabled: false, editable: false }, 'rebuild'), /Compose/);
+  await assert.rejects(prepareProjectAction(project, 'rebuild', 'target'), /单容器仅支持/);
 });
 
 test('受保护 API 精确控制单个容器，等待执行结果并刷新真实状态', async t => {
